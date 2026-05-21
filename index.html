@@ -236,27 +236,27 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
     <div id="kalka-status">Przetwarzanie…</div>
     <div class="ks">
       <div class="mode-row">
-        <button class="mode-btn active" id="kmode-foto">📷 Szkic</button>
+        <button class="mode-btn active" id="kmode-foto">🖼 Przygotuj</button>
         <button class="mode-btn" id="kmode-krawedzie">🔍 Krawędzie</button>
         <button class="mode-btn" id="kmode-rysunek">✏️ Rysunek</button>
       </div>
       <div>
         <div class="ks-row">
-          <span class="lbl">Rozmycie</span>
-          <span class="val" id="kBlurVal">1.5</span>
+          <span class="lbl" id="kLbl1">Wygładzenie</span>
+          <span class="val" id="kBlurVal">2.0</span>
         </div>
-        <input type="range" id="kBlur" min="0.3" max="5" step="0.1" value="1.5">
+        <input type="range" id="kBlur" min="0.3" max="5" step="0.1" value="2.0">
       </div>
       <div>
         <div class="ks-row">
-          <span class="lbl">Czułość krawędzi</span>
-          <span class="val" id="kSensVal">50</span>
+          <span class="lbl" id="kLbl2">Poziomy szarości</span>
+          <span class="val" id="kSensVal">5</span>
         </div>
-        <input type="range" id="kSens" min="1" max="100" step="1" value="50">
+        <input type="range" id="kSens" min="1" max="100" step="1" value="5">
       </div>
-      <div>
+      <div id="kThreshRow">
         <div class="ks-row">
-          <span class="lbl">Próg (grubość linii)</span>
+          <span class="lbl" id="kLbl3">Próg (grubość linii)</span>
           <span class="val" id="kThreshVal">50</span>
         </div>
         <input type="range" id="kThresh" min="1" max="100" step="1" value="50">
@@ -815,7 +815,29 @@ function threshold(gray, w, h, sigma, thresh){
   return res;
 }
 
-/* Canny edge detection — czyste, cienkie krawędzie */
+/* PRZYGOTUJ — posteryzacja z edge-preserving smoothing
+   Fotografia → płaskie strefy szarości z ostrymi granicami */
+function przygotuj(gray, w, h, levels, sigma){
+  /* 1. Wstępne rozmycie — redukcja szumów */
+  var s=gaussBlur(gray, w, h, sigma);
+  /* 2. Iteracyjne wygładzanie zachowujące krawędzie (uproszczony bilateral) */
+  for(var iter=0;iter<4;iter++){
+    var bl=gaussBlur(s, w, h, sigma*0.8);
+    var nx=new Float32Array(w*h);
+    for(var i=0;i<w*h;i++){
+      var diff=s[i]-bl[i];
+      var w2=Math.exp(-diff*diff*180); /* wysoka podobność = blend, krawędź = zachowaj */
+      nx[i]=s[i]*(1-w2)+bl[i]*w2;
+    }
+    s=nx;
+  }
+  /* 3. Posteryzacja — sprowadź do N poziomów szarości */
+  var step=1.0/(levels-1);
+  var res=new Float32Array(w*h);
+  for(var i=0;i<w*h;i++) res[i]=Math.round(s[i]/step)*step;
+  /* 4. Lekkie wygładzenie granic stref */
+  return gaussBlur(res, w, h, 0.4);
+}
 function canny(gray, w, h, sigma, lowT, highT){
   var bl=gaussBlur(gray,w,h,sigma);
   var Gm=new Float32Array(w*h), Gd=new Float32Array(w*h);
@@ -892,23 +914,18 @@ function processKalka(img, maxW){
   var gray=toGray(d.idata.data, d.w*d.h);
   var res;
 
-  if(kalkaMode==='krawedzie'){
-    /* Canny: czyste, cienkie krawędzie — najlepsza metoda dla fotek */
-    var lowT =(1.0-sens/100)*0.25;           /* czułość → próg dolny */
-    var highT=lowT*(1.5+thresh/50);          /* próg górny = lowT × ratio */
+  if(kalkaMode==='foto'){
+    /* PRZYGOTUJ: posteryzacja → płaskie strefy szarości */
+    var levels=Math.max(2,Math.round(2+sens/14)); /* sens 1-100 → 2-9 poziomów */
+    res=przygotuj(gray, d.w, d.h, levels, sigma);
+    /* Wynik normalny (nie inwertowany) — to nadal zdjęcie, nie kalka */
+  }else if(kalkaMode==='krawedzie'){
+    /* Canny: czyste, cienkie krawędzie */
+    var lowT=(1.0-sens/100)*0.25;
+    var highT=lowT*(1.5+thresh/50);
     res=canny(gray, d.w, d.h, sigma, lowT, highT);
-  }else if(kalkaMode==='foto'){
-    /* XDoG ze twardym progiem → binarne czarne linie */
-    var p=1.0-(sens/100)*0.08;
-    var phi=5+sens*0.6;
-    var eps=(thresh-50)/500;
-    var soft=xdog(gray, d.w, d.h, sigma, 1.6, p, phi, eps);
-    /* Konwertuj na binarne: 1=białe tło, 0=czarna linia */
-    var cutoff=0.85+(thresh/100)*0.12;
-    res=new Float32Array(d.w*d.h);
-    for(var i=0;i<d.w*d.h;i++) res[i]=soft[i]>=cutoff?1.0:0.0;
   }else{
-    /* Próg binarny dla rysunków */
+    /* Rysunek: próg binarny */
     var t=255-Math.round(thresh*2.2);
     var raw=threshold(gray, d.w, d.h, sigma*0.4, t);
     res=new Float32Array(d.w*d.h);
@@ -936,44 +953,57 @@ function refreshKalkaPreview(){
 kalkaBtn.addEventListener('click',function(){
   if(!S.img)return;
   kalkaModal.classList.add('open');
-  refreshKalkaPreview();
+  setModeUI('foto');
 });
 document.getElementById('kalka-close').addEventListener('click',function(){
   kalkaModal.classList.remove('open');
 });
 
 var kModeKraw=document.getElementById('kmode-krawedzie');
+var kLbl1=document.getElementById('kLbl1');
+var kLbl2=document.getElementById('kLbl2');
+var kLbl3=document.getElementById('kLbl3');
+var kThreshRow=document.getElementById('kThreshRow');
 
-/* Tryb Szkic (XDoG) */
-kModeFoto.addEventListener('click',function(){
-  kalkaMode='foto';
+function setModeUI(mode){
+  kalkaMode=mode;
   [kModeFoto,kModeKraw,kModeRys].forEach(function(b){b.classList.remove('active');});
-  kModeFoto.classList.add('active');
-  kBlurEl.value=1.5;kBlurVal.textContent='1.5';
-  kSensEl.value=50;kSensVal.textContent='50';
-  kThreshEl.value=50;kThreshVal.textContent='50';
+  if(mode==='foto'){
+    kModeFoto.classList.add('active');
+    kLbl1.textContent='Wygładzenie';
+    kLbl2.textContent='Poziomy szarości';
+    kThreshRow.style.display='none';
+    kBlurEl.value=2.0;kBlurVal.textContent='2.0';
+    kSensEl.setAttribute('min','2');kSensEl.setAttribute('max','9');
+    kSensEl.value=5;kSensVal.textContent='5';
+    kalkaStatus.textContent='Wyreguluj poziomy → Zastosuj → potem użyj Krawędzie';
+  }else if(mode==='krawedzie'){
+    kModeKraw.classList.add('active');
+    kLbl1.textContent='Rozmycie';
+    kLbl2.textContent='Czułość krawędzi';
+    kLbl3.textContent='Próg (grubość linii)';
+    kThreshRow.style.display='block';
+    kSensEl.setAttribute('min','1');kSensEl.setAttribute('max','100');
+    kBlurEl.value=1.2;kBlurVal.textContent='1.2';
+    kSensEl.value=70;kSensVal.textContent='70';
+    kThreshEl.value=40;kThreshVal.textContent='40';
+  }else{
+    kModeRys.classList.add('active');
+    kLbl1.textContent='Rozmycie';
+    kLbl2.textContent='Czułość';
+    kLbl3.textContent='Próg (grubość linii)';
+    kThreshRow.style.display='block';
+    kSensEl.setAttribute('min','1');kSensEl.setAttribute('max','100');
+    kBlurEl.value=0.5;kBlurVal.textContent='0.5';
+    kSensEl.value=70;kSensVal.textContent='70';
+    kThreshEl.value=60;kThreshVal.textContent='60';
+  }
   refreshKalkaPreview();
-});
-/* Tryb Krawędzie (Canny) */
-kModeKraw.addEventListener('click',function(){
-  kalkaMode='krawedzie';
-  [kModeFoto,kModeKraw,kModeRys].forEach(function(b){b.classList.remove('active');});
-  kModeKraw.classList.add('active');
-  kBlurEl.value=1.2;kBlurVal.textContent='1.2';
-  kSensEl.value=70;kSensVal.textContent='70';
-  kThreshEl.value=40;kThreshVal.textContent='40';
-  refreshKalkaPreview();
-});
-/* Tryb Rysunek (próg) */
-kModeRys.addEventListener('click',function(){
-  kalkaMode='rysunek';
-  [kModeFoto,kModeKraw,kModeRys].forEach(function(b){b.classList.remove('active');});
-  kModeRys.classList.add('active');
-  kBlurEl.value=0.5;kBlurVal.textContent='0.5';
-  kSensEl.value=70;kSensVal.textContent='70';
-  kThreshEl.value=60;kThreshVal.textContent='60';
-  refreshKalkaPreview();
-});
+}
+
+kModeFoto.addEventListener('click',function(){setModeUI('foto');});
+kModeKraw.addEventListener('click',function(){setModeUI('krawedzie');});
+kModeRys.addEventListener('click', function(){setModeUI('rysunek');});
 
 /* Suwaki — podgląd w locie */
 kBlurEl.addEventListener('input',function(){kBlurVal.textContent=this.value;refreshKalkaPreview();});
