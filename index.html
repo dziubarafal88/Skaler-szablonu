@@ -267,8 +267,9 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
       <button class="btn btn-outline" id="kalka-save" style="border-color:#aaa;color:#aaa;">↓ ZAPISZ</button>
       <button class="btn btn-outline" id="kalka-close">✕ ANULUJ</button>
     </div>
-    <div class="hint" style="text-align:center;margin-top:4px;">
-      Zastosuj → kalka zastąpi oryginał · możesz dalej skalować i eksportować
+    <button class="btn btn-gold" id="kalka-prepare" style="display:none;margin-top:0">→ DALEJ: KRAWĘDZIE</button>
+    <div class="hint" style="text-align:center;margin-top:4px;" id="kalka-hint">
+      PRZYGOTUJ → "Dalej: Krawędzie" → reguluj → Zastosuj
     </div>
   </div>
 </div>
@@ -317,6 +318,7 @@ var kModeFoto=document.getElementById('kmode-foto'),kModeRys=document.getElement
 var kalkaStatus=document.getElementById('kalka-status');
 var kalkaMode='foto';
 var _kalkaTimer;
+var preparedImg=null; /* obraz po PRZYGOTUJ — używany przez KRAWĘDZIE/RYSUNEK */
 var infoGrid=document.getElementById('infoGrid'),infoAspect=document.getElementById('infoAspect');
 var ancHint=document.getElementById('ancHint');
 var exportBtn=document.getElementById('exportBtn');
@@ -942,17 +944,23 @@ function processKalka(img, maxW){
   return {idata:buildResult(res, d.w, d.h), w:d.w, h:d.h};
 }
 
-/* Odśwież podgląd w modalu */
+/* Odśwież podgląd — KRAWĘDZIE/RYSUNEK używają preparedImg jeśli dostępny */
+function sourceImg(){
+  return (kalkaMode!=='foto' && preparedImg) ? preparedImg : S.img;
+}
+
 function refreshKalkaPreview(){
   if(!S.img)return;
   kalkaStatus.textContent='Przetwarzanie…';
   clearTimeout(_kalkaTimer);
   _kalkaTimer=setTimeout(function(){
     try{
-      var r=processKalka(S.img, 600); /* podgląd max 600px */
+      var r=processKalka(sourceImg(), 600);
       kalkaCv.width=r.w; kalkaCv.height=r.h;
       kCtx.putImageData(r.idata, 0, 0);
-      kalkaStatus.textContent='Gotowy podgląd · wyreguluj suwaki';
+      kalkaStatus.textContent= kalkaMode==='foto'
+        ? 'Podgląd · kliknij "→ Dalej: Krawędzie" gdy zadowolony'
+        : (preparedImg ? 'Na obrazie przygotowanym ✓' : 'Gotowy podgląd · wyreguluj suwaki');
     }catch(e){kalkaStatus.textContent='Błąd: '+e.message;}
   },120);
 }
@@ -960,6 +968,7 @@ function refreshKalkaPreview(){
 /* Otwórz modal kalki */
 kalkaBtn.addEventListener('click',function(){
   if(!S.img)return;
+  preparedImg=null; /* reset przy każdym otwarciu */
   kalkaModal.classList.add('open');
   setModeUI('foto');
 });
@@ -972,10 +981,16 @@ var kLbl1=document.getElementById('kLbl1');
 var kLbl2=document.getElementById('kLbl2');
 var kLbl3=document.getElementById('kLbl3');
 var kThreshRow=document.getElementById('kThreshRow');
+var kalkaBtns=document.querySelector('.kalka-btns');
+var kalkaPrepBtn=document.getElementById('kalka-prepare');
 
 function setModeUI(mode){
   kalkaMode=mode;
   [kModeFoto,kModeKraw,kModeRys].forEach(function(b){b.classList.remove('active');});
+  var isFoto=(mode==='foto');
+  kalkaBtns.style.display=isFoto?'none':'flex';
+  kalkaPrepBtn.style.display=isFoto?'block':'none';
+
   if(mode==='foto'){
     kModeFoto.classList.add('active');
     kLbl1.textContent='Wygładzenie';
@@ -984,14 +999,14 @@ function setModeUI(mode){
     kBlurEl.value=2.0;kBlurVal.textContent='2.0';
     kSensEl.setAttribute('min','2');kSensEl.setAttribute('max','9');kSensEl.setAttribute('step','1');
     kSensEl.value=5;kSensVal.textContent='5';
-    kalkaStatus.textContent='Wyreguluj poziomy → Zastosuj → potem użyj Krawędzie';
+    kalkaStatus.textContent='Wyreguluj → kliknij "→ Dalej: Krawędzie"';
   }else if(mode==='krawedzie'){
     kModeKraw.classList.add('active');
     kLbl1.textContent='Rozmycie (redukcja szumów)';
     kLbl2.textContent='Czułość krawędzi';
     kLbl3.textContent='Wygładzenie linii';
     kThreshRow.style.display='block';
-    kSensEl.setAttribute('min','1');kSensEl.setAttribute('max','100');
+    kSensEl.setAttribute('min','1');kSensEl.setAttribute('max','100');kSensEl.setAttribute('step','1');
     kBlurEl.value=1.2;kBlurVal.textContent='1.2';
     kSensEl.value=70;kSensVal.textContent='70';
     kThreshEl.value=45;kThreshVal.textContent='45';
@@ -1001,7 +1016,7 @@ function setModeUI(mode){
     kLbl2.textContent='Czułość';
     kLbl3.textContent='Próg (grubość linii)';
     kThreshRow.style.display='block';
-    kSensEl.setAttribute('min','1');kSensEl.setAttribute('max','100');
+    kSensEl.setAttribute('min','1');kSensEl.setAttribute('max','100');kSensEl.setAttribute('step','1');
     kBlurEl.value=0.5;kBlurVal.textContent='0.5';
     kSensEl.value=70;kSensVal.textContent='70';
     kThreshEl.value=60;kThreshVal.textContent='60';
@@ -1013,6 +1028,26 @@ kModeFoto.addEventListener('click',function(){setModeUI('foto');});
 kModeKraw.addEventListener('click',function(){setModeUI('krawedzie');});
 kModeRys.addEventListener('click', function(){setModeUI('rysunek');});
 
+/* → DALEJ: KRAWĘDZIE — zapisuje przygotowany obraz i przechodzi */
+kalkaPrepBtn.addEventListener('click',function(){
+  if(!S.img)return;
+  kalkaStatus.textContent='Przygotowuję obraz…';
+  setTimeout(function(){
+    try{
+      var r=processKalka(S.img, 1500); /* PRZYGOTUJ max 1500px */
+      var tmp=document.createElement('canvas');
+      tmp.width=r.w;tmp.height=r.h;
+      tmp.getContext('2d').putImageData(r.idata,0,0);
+      var img=new Image();
+      img.onload=function(){
+        preparedImg=img;
+        setModeUI('krawedzie'); /* auto-switch do Krawędzie */
+      };
+      img.src=tmp.toDataURL('image/png');
+    }catch(e){kalkaStatus.textContent='Błąd: '+e.message;}
+  },50);
+});
+
 /* Suwaki — podgląd w locie */
 kBlurEl.addEventListener('input',function(){kBlurVal.textContent=this.value;refreshKalkaPreview();});
 kSensEl.addEventListener('input',function(){kSensVal.textContent=this.value;refreshKalkaPreview();});
@@ -1022,18 +1057,17 @@ kThreshEl.addEventListener('input',function(){kThreshVal.textContent=this.value;
 document.getElementById('kalka-apply').addEventListener('click',function(){
   if(!S.img)return;
   kalkaStatus.textContent='Przetwarzanie…';
-  /* PRZYGOTUJ: max 1500px (wystarczy dla kolejnego kroku Krawędzie)
-     KRAWĘDZIE/RYSUNEK: pełna rozdzielczość */
-  var maxRes= kalkaMode==='foto' ? 1500 : 99999;
+  var maxRes=99999;
   setTimeout(function(){
     try{
-      var r=processKalka(S.img, maxRes);
+      var r=processKalka(sourceImg(), maxRes);
       var tmp=document.createElement('canvas');
       tmp.width=r.w; tmp.height=r.h;
       tmp.getContext('2d').putImageData(r.idata,0,0);
       var newImg=new Image();
       newImg.onload=function(){
         S.img=newImg;
+        preparedImg=null;
         kalkaModal.classList.remove('open');
         draw();
         showStatus('Kalka zastosowana ✓','ok');
@@ -1049,7 +1083,7 @@ document.getElementById('kalka-save').addEventListener('click',function(){
   kalkaStatus.textContent='Zapisuję…';
   setTimeout(function(){
     try{
-      var r=processKalka(S.img,99999);
+      var r=processKalka(sourceImg(),99999);
       var tmp=document.createElement('canvas');
       tmp.width=r.w;tmp.height=r.h;
       tmp.getContext('2d').putImageData(r.idata,0,0);
