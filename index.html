@@ -817,28 +817,50 @@ function threshold(gray, w, h, sigma, thresh){
   return res;
 }
 
-/* PRZYGOTUJ — posteryzacja z edge-preserving smoothing
-   Fotografia → płaskie strefy szarości z ostrymi granicami */
-function przygotuj(gray, w, h, levels, sigma){
-  /* 1. Wstępne rozmycie — redukcja szumów */
-  var s=gaussBlur(gray, w, h, sigma);
-  /* 2. Iteracyjne wygładzanie zachowujące krawędzie (uproszczony bilateral) */
-  for(var iter=0;iter<4;iter++){
-    var bl=gaussBlur(s, w, h, sigma*0.8);
-    var nx=new Float32Array(w*h);
-    for(var i=0;i<w*h;i++){
-      var diff=s[i]-bl[i];
-      var w2=Math.exp(-diff*diff*180); /* wysoka podobność = blend, krawędź = zachowaj */
-      nx[i]=s[i]*(1-w2)+bl[i]*w2;
+/* Szybki box blur (separowalny) — używany do czyszczenia stref */
+function boxBlur(data, w, h, r){
+  var tmp=new Float32Array(w*h), out=new Float32Array(w*h);
+  var rs=2*r+1;
+  for(var y=0;y<h;y++){
+    var sum=0;
+    for(var k=0;k<r;k++) sum+=data[y*w+0];
+    for(var k=0;k<r+1;k++) sum+=data[y*w+Math.min(k,w-1)];
+    for(var x=0;x<w;x++){
+      if(x+r<w) sum+=data[y*w+x+r]; else sum+=data[y*w+w-1];
+      if(x-r-1>=0) sum-=data[y*w+x-r-1]; else sum-=data[y*w+0];
+      tmp[y*w+x]=sum/rs;
     }
-    s=nx;
   }
-  /* 3. Posteryzacja — sprowadź do N poziomów szarości */
+  for(var x=0;x<w;x++){
+    var sum=0;
+    for(var k=0;k<r;k++) sum+=tmp[0*w+x];
+    for(var k=0;k<r+1;k++) sum+=tmp[Math.min(k,h-1)*w+x];
+    for(var y=0;y<h;y++){
+      if(y+r<h) sum+=tmp[(y+r)*w+x]; else sum+=tmp[(h-1)*w+x];
+      if(y-r-1>=0) sum-=tmp[(y-r-1)*w+x]; else sum-=tmp[0*w+x];
+      out[y*w+x]=sum/rs;
+    }
+  }
+  return out;
+}
+
+/* PRZYGOTUJ — nowe podejście: blur → kwantyzacja → box+rekwantyzacja×3
+   Box filter + re-kwantyzacja iteracyjnie usuwa izolowane piksele/szum
+   pozostawiając perfekcyjnie płaskie strefy z ostrymi granicami */
+function przygotuj(gray, w, h, levels, sigma){
+  /* 1. Wstępny Gaussian blur (usuwa szum JPEG) */
+  var s=gaussBlur(gray, w, h, sigma);
+  /* 2. Pierwsza kwantyzacja */
   var step=1.0/(levels-1);
-  var res=new Float32Array(w*h);
-  for(var i=0;i<w*h;i++) res[i]=Math.round(s[i]/step)*step;
-  /* Brak końcowego rozmycia — ostre granice stref = lepsze krawędzie */
-  return res;
+  for(var i=0;i<w*h;i++) s[i]=Math.round(s[i]/step)*step;
+  /* 3. Box blur + re-kwantyzacja × 3 — usuwa izolowane piksele wewnątrz stref */
+  for(var iter=0;iter<3;iter++){
+    s=boxBlur(s, w, h, 2); /* okno 5×5 */
+    for(var i=0;i<w*h;i++) s[i]=Math.round(s[i]/step)*step;
+  }
+  /* Wynik: idealnie płaskie strefy, ostre granice */
+  return s;
+}
 }
 /* Detekcja granic stref posteryzacji.
    threshold: min różnica aby uznać za granicę strefy (nie szum wewnątrz strefy) */
@@ -947,10 +969,10 @@ function processKalka(img, maxW){
   }else if(kalkaMode==='krawedzie'){
     var smoothAmt=0.3+(thresh/100)*2.2;
     if(preparedCanvas){
-      /* Auto detekcja granic stref
-         sens: 1=tylko główne granice (próg 0.20), 100=wszystko (próg 0.04)
-         domyślnie ~70 → próg ~0.09 — łapie granice stref, ignoruje szum */
-      var zoneThresh=0.22-(sens/100)*0.18;
+      /* Strefy są perfekcyjnie płaskie po box+rekwantyzacji
+         → próg bliski 0, każda różnica to prawdziwa granica
+         sens: 100=wszystkie granice (0.01), 1=tylko główne (0.15) */
+      var zoneThresh=0.01+(100-sens)/100*0.14;
       res=posterEdges(gray, d.w, d.h, smoothAmt, zoneThresh);
     }else{
       /* Canny dla obrazu oryginalnego */
@@ -1030,7 +1052,7 @@ function setModeUI(mode){
     kLbl1.textContent='Wygładzenie';
     kLbl2.textContent='Poziomy szarości (2–9)';
     kThreshRow.style.display='none';
-    kBlurEl.value=2.0;kBlurVal.textContent='2.0';
+    kBlurEl.value=3.0;kBlurVal.textContent='3.0';
     kSensEl.setAttribute('min','2');kSensEl.setAttribute('max','9');kSensEl.setAttribute('step','1');
     kSensEl.value=5;kSensVal.textContent='5';
     kalkaStatus.textContent='Wyreguluj → kliknij "→ Dalej: Krawędzie"';
