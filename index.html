@@ -916,7 +916,7 @@ function processKalka(img, maxW){
 
   if(kalkaMode==='foto'){
     /* PRZYGOTUJ: posteryzacja → płaskie strefy szarości */
-    var levels=Math.max(2,Math.round(2+sens/14)); /* sens 1-100 → 2-9 poziomów */
+    var levels=Math.max(2,Math.min(9,Math.round(sens))); /* sens = bezpośrednio liczba poziomów */
     res=przygotuj(gray, d.w, d.h, levels, sigma);
     /* Wynik normalny (nie inwertowany) — to nadal zdjęcie, nie kalka */
   }else if(kalkaMode==='krawedzie'){
@@ -979,10 +979,10 @@ function setModeUI(mode){
   if(mode==='foto'){
     kModeFoto.classList.add('active');
     kLbl1.textContent='Wygładzenie';
-    kLbl2.textContent='Poziomy szarości';
+    kLbl2.textContent='Poziomy szarości (2–9)';
     kThreshRow.style.display='none';
     kBlurEl.value=2.0;kBlurVal.textContent='2.0';
-    kSensEl.setAttribute('min','2');kSensEl.setAttribute('max','9');
+    kSensEl.setAttribute('min','2');kSensEl.setAttribute('max','9');kSensEl.setAttribute('step','1');
     kSensEl.value=5;kSensVal.textContent='5';
     kalkaStatus.textContent='Wyreguluj poziomy → Zastosuj → potem użyj Krawędzie';
   }else if(mode==='krawedzie'){
@@ -1021,10 +1021,13 @@ kThreshEl.addEventListener('input',function(){kThreshVal.textContent=this.value;
 /* Zastosuj — przetwarza w pełnej rozdzielczości, zastępuje obraz */
 document.getElementById('kalka-apply').addEventListener('click',function(){
   if(!S.img)return;
-  kalkaStatus.textContent='Przetwarzanie w pełnej rozdzielczości…';
+  kalkaStatus.textContent='Przetwarzanie…';
+  /* PRZYGOTUJ: max 1500px (wystarczy dla kolejnego kroku Krawędzie)
+     KRAWĘDZIE/RYSUNEK: pełna rozdzielczość */
+  var maxRes= kalkaMode==='foto' ? 1500 : 99999;
   setTimeout(function(){
     try{
-      var r=processKalka(S.img, 99999); /* pełna rozdzielczość */
+      var r=processKalka(S.img, maxRes);
       var tmp=document.createElement('canvas');
       tmp.width=r.w; tmp.height=r.h;
       tmp.getContext('2d').putImageData(r.idata,0,0);
