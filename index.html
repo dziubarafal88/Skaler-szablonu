@@ -837,22 +837,23 @@ function przygotuj(gray, w, h, levels, sigma){
   var step=1.0/(levels-1);
   var res=new Float32Array(w*h);
   for(var i=0;i<w*h;i++) res[i]=Math.round(s[i]/step)*step;
-  /* 4. Lekkie wygładzenie granic stref */
-  return gaussBlur(res, w, h, 0.4);
+  /* Brak końcowego rozmycia — ostre granice stref = lepsze krawędzie */
+  return res;
 }
-/* Detekcja granic stref posteryzacji — idealna dla przygotowanego obrazu.
-   Sprawdza piksele gdzie sąsiad ma inną wartość → czyste, dokładne krawędzie */
-function posterEdges(gray, w, h, smoothAmt){
+/* Detekcja granic stref posteryzacji.
+   threshold: min różnica aby uznać za granicę strefy (nie szum wewnątrz strefy) */
+function posterEdges(gray, w, h, smoothAmt, threshold){
   var e=new Float32Array(w*h);
   for(var y=0;y<h;y++){for(var x=0;x<w;x++){
     var i=y*w+x, v=gray[i];
-    var diff=0;
-    if(x>0)   diff=Math.max(diff,Math.abs(gray[i-1]-v));
-    if(x<w-1) diff=Math.max(diff,Math.abs(gray[i+1]-v));
-    if(y>0)   diff=Math.max(diff,Math.abs(gray[(y-1)*w+x]-v));
-    if(y<h-1) diff=Math.max(diff,Math.abs(gray[(y+1)*w+x]-v));
-    e[i]= diff>0.04 ? Math.min(1.0,diff*4.0) : 0.0;
+    var maxDiff=0;
+    if(x>0)   maxDiff=Math.max(maxDiff,Math.abs(gray[i-1]-v));
+    if(x<w-1) maxDiff=Math.max(maxDiff,Math.abs(gray[i+1]-v));
+    if(y>0)   maxDiff=Math.max(maxDiff,Math.abs(gray[(y-1)*w+x]-v));
+    if(y<h-1) maxDiff=Math.max(maxDiff,Math.abs(gray[(y+1)*w+x]-v));
+    e[i]= maxDiff>threshold ? 1.0 : 0.0;
   }}
+  /* Anti-aliasing */
   var bl=gaussBlur(e,w,h,smoothAmt);
   var res=new Float32Array(w*h);
   for(var i=0;i<w*h;i++) res[i]=1.0-Math.min(1.0,bl[i]*2.5);
@@ -946,8 +947,11 @@ function processKalka(img, maxW){
   }else if(kalkaMode==='krawedzie'){
     var smoothAmt=0.3+(thresh/100)*2.2;
     if(preparedCanvas){
-      /* Automatyczna detekcja granic stref — idealna dla posteryzacji */
-      res=posterEdges(gray, d.w, d.h, smoothAmt);
+      /* Auto detekcja granic stref
+         sens: 1=tylko główne granice (próg 0.20), 100=wszystko (próg 0.04)
+         domyślnie ~70 → próg ~0.09 — łapie granice stref, ignoruje szum */
+      var zoneThresh=0.22-(sens/100)*0.18;
+      res=posterEdges(gray, d.w, d.h, smoothAmt, zoneThresh);
     }else{
       /* Canny dla obrazu oryginalnego */
       var lowT=(1.0-sens/100)*0.25;
@@ -1033,13 +1037,13 @@ function setModeUI(mode){
   }else if(mode==='krawedzie'){
     kModeKraw.classList.add('active');
     kLbl1.textContent='Rozmycie (redukcja szumów)';
-    kLbl2.textContent='Czułość krawędzi';
+    kLbl2.textContent=preparedCanvas?'Próg granic (mniej=więcej linii)':'Czułość krawędzi';
     kLbl3.textContent='Wygładzenie linii';
     kThreshRow.style.display='block';
     kSensEl.setAttribute('min','1');kSensEl.setAttribute('max','100');kSensEl.setAttribute('step','1');
-    kBlurEl.value=1.2;kBlurVal.textContent='1.2';
-    kSensEl.value=70;kSensVal.textContent='70';
-    kThreshEl.value=45;kThreshVal.textContent='45';
+    kBlurEl.value=1.0;kBlurVal.textContent='1.0';
+    kSensEl.value=65;kSensVal.textContent='65';
+    kThreshEl.value=35;kThreshVal.textContent='35';
   }else{
     kModeRys.classList.add('active');
     kLbl1.textContent='Rozmycie';
