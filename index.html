@@ -318,7 +318,7 @@ var kModeFoto=document.getElementById('kmode-foto'),kModeRys=document.getElement
 var kalkaStatus=document.getElementById('kalka-status');
 var kalkaMode='foto';
 var _kalkaTimer;
-var preparedImg=null; /* obraz po PRZYGOTUJ — używany przez KRAWĘDZIE/RYSUNEK */
+var preparedCanvas=null; /* canvas po PRZYGOTUJ — używany przez KRAWĘDZIE/RYSUNEK */
 var infoGrid=document.getElementById('infoGrid'),infoAspect=document.getElementById('infoAspect');
 var ancHint=document.getElementById('ancHint');
 var exportBtn=document.getElementById('exportBtn');
@@ -897,13 +897,16 @@ function buildResult(res, w, h){
 }
 
 /* Pobierz ImageData z obrazu przeskalowanego do maxW */
-function getScaledImageData(img, maxW){
-  var scale=Math.min(1, maxW/img.naturalWidth);
-  var w=Math.round(img.naturalWidth*scale);
-  var h=Math.round(img.naturalHeight*scale);
+function getScaledImageData(src, maxW){
+  /* Działa zarówno z Image jak i z Canvas */
+  var nw=src.naturalWidth||src.width;
+  var nh=src.naturalHeight||src.height;
+  var scale=Math.min(1, maxW/nw);
+  var w=Math.round(nw*scale)||1;
+  var h=Math.round(nh*scale)||1;
   var tmp=document.createElement('canvas');
   tmp.width=w; tmp.height=h;
-  tmp.getContext('2d').drawImage(img,0,0,w,h);
+  tmp.getContext('2d').drawImage(src,0,0,w,h);
   return {idata:tmp.getContext('2d').getImageData(0,0,w,h), w:w, h:h};
 }
 
@@ -944,9 +947,9 @@ function processKalka(img, maxW){
   return {idata:buildResult(res, d.w, d.h), w:d.w, h:d.h};
 }
 
-/* Odśwież podgląd — KRAWĘDZIE/RYSUNEK używają preparedImg jeśli dostępny */
+/* Źródło dla KRAWĘDZIE/RYSUNEK: preparedCanvas jeśli dostępny */
 function sourceImg(){
-  return (kalkaMode!=='foto' && preparedImg) ? preparedImg : S.img;
+  return (kalkaMode!=='foto' && preparedCanvas) ? preparedCanvas : S.img;
 }
 
 function refreshKalkaPreview(){
@@ -958,9 +961,13 @@ function refreshKalkaPreview(){
       var r=processKalka(sourceImg(), 600);
       kalkaCv.width=r.w; kalkaCv.height=r.h;
       kCtx.putImageData(r.idata, 0, 0);
-      kalkaStatus.textContent= kalkaMode==='foto'
-        ? 'Podgląd · kliknij "→ Dalej: Krawędzie" gdy zadowolony'
-        : (preparedImg ? 'Na obrazie przygotowanym ✓' : 'Gotowy podgląd · wyreguluj suwaki');
+      if(kalkaMode==='foto'){
+        kalkaStatus.textContent='Podgląd posteryzacji · kliknij "→ Dalej: Krawędzie"';
+      }else if(preparedCanvas){
+        kalkaStatus.textContent='✓ Krawędzie na przygotowanym obrazie · wyreguluj suwaki';
+      }else{
+        kalkaStatus.textContent='Krawędzie na oryginale · wyreguluj suwaki';
+      }
     }catch(e){kalkaStatus.textContent='Błąd: '+e.message;}
   },120);
 }
@@ -968,7 +975,7 @@ function refreshKalkaPreview(){
 /* Otwórz modal kalki */
 kalkaBtn.addEventListener('click',function(){
   if(!S.img)return;
-  preparedImg=null; /* reset przy każdym otwarciu */
+  preparedCanvas=null;
   kalkaModal.classList.add('open');
   setModeUI('foto');
 });
@@ -1034,16 +1041,13 @@ kalkaPrepBtn.addEventListener('click',function(){
   kalkaStatus.textContent='Przygotowuję obraz…';
   setTimeout(function(){
     try{
-      var r=processKalka(S.img, 1500); /* PRZYGOTUJ max 1500px */
+      var r=processKalka(S.img, 1500);
+      /* Zapisz jako canvas bezpośrednio — bez konwersji do dataURL */
       var tmp=document.createElement('canvas');
-      tmp.width=r.w;tmp.height=r.h;
+      tmp.width=r.w; tmp.height=r.h;
       tmp.getContext('2d').putImageData(r.idata,0,0);
-      var img=new Image();
-      img.onload=function(){
-        preparedImg=img;
-        setModeUI('krawedzie'); /* auto-switch do Krawędzie */
-      };
-      img.src=tmp.toDataURL('image/png');
+      preparedCanvas=tmp;
+      setModeUI('krawedzie');
     }catch(e){kalkaStatus.textContent='Błąd: '+e.message;}
   },50);
 });
@@ -1067,7 +1071,7 @@ document.getElementById('kalka-apply').addEventListener('click',function(){
       var newImg=new Image();
       newImg.onload=function(){
         S.img=newImg;
-        preparedImg=null;
+        preparedCanvas=null;
         kalkaModal.classList.remove('open');
         draw();
         showStatus('Kalka zastosowana ✓','ok');
