@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Skaler Szablonu Tatuażu</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:#111;color:#fff;font-family:'Courier New',monospace;font-size:13px;}
+body{overflow:hidden;}
+#app{display:flex;height:100vh;overflow:hidden;}
+@media(orientation:landscape){
+  #app{flex-direction:row;}
+  #left{flex:1;min-width:0;display:flex;flex-direction:column;}
+  #panel{width:252px;min-width:252px;height:100vh;overflow-y:auto;flex-shrink:0;}
+}
+@media(orientation:portrait){
+  #app{flex-direction:column;}
+  #left{height:52vh;min-height:180px;flex-shrink:0;display:flex;flex-direction:column;}
+  #panel{flex:1;overflow-y:auto;}
+  body{overflow:auto;}
+}
+
+/* ── canvas area ── */
+#preview{flex:1;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 50%,#1c1c1c 0%,#0d0d0d 100%);overflow:hidden;min-height:0;}
+#cv{display:block;}
+
+/* ── preset buttons strip ── */
+#presets{flex-shrink:0;display:flex;gap:8px;padding:10px 14px;
+  background:#141414;border-top:1px solid #1e1e1e;align-items:center;}
+#presets .pre-label{font-size:9px;color:#444;letter-spacing:2px;text-transform:uppercase;white-space:nowrap;margin-right:4px;}
+.pre-btn{flex:1;padding:8px 4px;background:#1a1a1a;color:#666;
+  border:1px solid #2a2a2a;border-radius:3px;
+  font-family:'Courier New',monospace;font-size:11px;font-weight:bold;
+  letter-spacing:1px;cursor:pointer;text-align:center;line-height:1.4;
+  transition:border-color .12s,color .12s,background .12s;}
+.pre-btn:hover{border-color:#888;color:#aaa;}
+.pre-btn.active{background:#1e1900;color:#e8c547;border-color:#e8c547;}
+.pre-btn small{display:block;font-size:9px;font-weight:normal;opacity:.6;letter-spacing:0;}
+
+/* ── control panel ── */
+#panel{background:#181818;border-left:1px solid #222;display:flex;flex-direction:column;}
+@media(orientation:portrait){#panel{border-left:none;border-top:1px solid #222;}}
+#header{padding:12px 16px 10px;border-bottom:1px solid #222;flex-shrink:0;}
+#title{font-family:Georgia,serif;font-size:19px;font-weight:bold;letter-spacing:3px;
+  color:#e8c547;text-transform:uppercase;line-height:1;}
+#subtitle{font-size:8px;color:#3a3a3a;letter-spacing:3px;margin-top:2px;}
+#controls{padding:12px 16px;display:flex;flex-direction:column;gap:12px;}
+.btn{display:block;width:100%;padding:9px 0;border:none;border-radius:3px;
+  font-family:'Courier New',monospace;font-size:11px;font-weight:bold;
+  letter-spacing:2px;cursor:pointer;text-align:center;text-transform:uppercase;}
+.btn-gold{background:#e8c547;color:#111;}
+.btn-gold:hover,.btn-gold:active{background:#f0cc3a;}
+.btn-outline{background:#141414;color:#e8c547;border:1px solid #e8c547;}
+.btn-outline:hover,.btn-outline:active{background:#1f1d00;}
+.btn-outline:disabled{color:#555;border-color:#333;background:#111;cursor:default;}
+.row{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;}
+.lbl{font-size:9px;color:#555;letter-spacing:2px;text-transform:uppercase;}
+.val{font-size:11px;color:#e8c547;font-weight:bold;}
+input[type=number]{width:100%;padding:6px 8px;background:#111;color:#fff;
+  border:1px solid #2a2a2a;border-radius:3px;font-family:'Courier New',monospace;
+  font-size:13px;outline:none;margin-bottom:7px;-moz-appearance:textfield;}
+input[type=number]:focus{border-color:#e8c547;}
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+input[type=range]{width:100%;-webkit-appearance:none;appearance:none;
+  height:4px;background:#2e2e2e;border-radius:2px;outline:none;cursor:pointer;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;
+  border-radius:50%;background:#e8c547;cursor:pointer;border:2px solid #1a1a1a;}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
+  background:#e8c547;cursor:pointer;border:2px solid #1a1a1a;}
+.info{background:#111;border:1px solid #202020;border-radius:3px;padding:8px 10px;}
+.info-row{display:flex;justify-content:space-between;font-size:10px;
+  padding-bottom:4px;margin-bottom:4px;border-bottom:1px solid #1a1a1a;}
+.info-row:last-child{padding-bottom:0;margin-bottom:0;border-bottom:none;}
+.info-k{color:#444;}.info-v{color:#aaa;}
+.info-v.hi{color:#e8c547;font-weight:bold;}
+.overlap-box{background:#1a1500;border:1px solid #3a2e00;border-radius:3px;padding:9px 10px;}
+.overlap-title{font-size:9px;color:#e8c547;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;}
+.overlap-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.overlap-row input[type=number]{margin:0;flex:none;width:60px;}
+.overlap-note{font-size:9px;color:#4a3a00;line-height:1.6;}
+#anchors{display:inline-grid;grid-template-columns:repeat(3,28px);gap:3px;}
+.anc{width:28px;height:28px;background:#1e1e1e;border:1px solid #303030;
+  border-radius:2px;cursor:pointer;font-size:13px;color:#555;
+  display:flex;align-items:center;justify-content:center;}
+.anc:hover{border-color:#e8c547!important;}
+.anc.sel{background:#e8c547;border-color:#e8c547;color:#111;}
+#status{font-size:10px;text-align:center;min-height:15px;margin-top:5px;}
+.hint{font-size:9px;color:#2a2a2a;margin-top:4px;line-height:1.8;}
+.sec-title{font-size:9px;color:#3a3a3a;letter-spacing:2px;text-transform:uppercase;
+  margin-bottom:6px;border-top:1px solid #1e1e1e;padding-top:10px;}
+/* iOS modal */
+#modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.93);
+  z-index:100;flex-direction:column;align-items:center;overflow-y:auto;padding:20px;}
+#modal.open{display:flex;}
+#modal-inner{width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px;}
+#modal h2{font-size:14px;color:#e8c547;letter-spacing:2px;text-align:center;}
+#modal p{font-size:11px;color:#888;text-align:center;line-height:1.7;}
+.sheet-wrap{background:#222;border:1px solid #333;border-radius:4px;padding:8px;text-align:center;}
+.sheet-wrap img{max-width:100%;height:auto;display:block;border:1px solid #444;}
+.sheet-label{font-size:9px;color:#888;margin-bottom:5px;text-align:left;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:#111;}
+::-webkit-scrollbar-thumb{background:#333;border-radius:2px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- lewa kolumna: canvas + przyciski preset -->
+  <div id="left">
+    <div id="preview"><canvas id="cv"></canvas></div>
+    <div id="presets">
+      <span class="pre-label">Skaluj do:</span>
+      <button class="pre-btn" id="btn1">
+        1× A4<small>210 × 297 mm</small>
+      </button>
+      <button class="pre-btn" id="btn4">
+        4× A4<small>2×2 · 420 × 594 mm</small>
+      </button>
+      <button class="pre-btn" id="btn9">
+        9× A4<small>3×3 · 630 × 891 mm</small>
+      </button>
+    </div>
+  </div>
+
+  <!-- panel sterowania -->
+  <div id="panel">
+    <div id="header">
+      <div id="title">Skaler Szablonu</div>
+      <div id="subtitle">TATUAŻ · A4 · 300 DPI</div>
+    </div>
+    <div id="controls">
+
+      <div>
+        <button class="btn btn-gold" id="uploadBtn">↑ WGRAJ OBRAZ</button>
+        <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.webp" style="display:none">
+        <div id="status"></div>
+      </div>
+
+      <div>
+        <div class="row">
+          <span class="lbl">Szerokość</span>
+          <span class="val" id="wVal">210 mm</span>
+        </div>
+        <input type="number" id="wNum" min="10" max="840" value="210" inputmode="numeric">
+        <input type="range"  id="wRng" min="10" max="840" value="210">
+      </div>
+
+      <div>
+        <div class="row">
+          <span class="lbl">Wysokość</span>
+          <span class="val" id="hVal">297 mm</span>
+        </div>
+        <input type="number" id="hNum" min="10" max="1200" value="297" inputmode="numeric">
+        <input type="range"  id="hRng" min="10" max="1200" value="297">
+      </div>
+
+      <div class="info">
+        <div class="info-row"><span class="info-k">Rozmiar</span><span class="info-v" id="infoSize">210 × 297 mm</span></div>
+        <div class="info-row"><span class="info-k">Arkusze A4</span><span class="info-v" id="infoSheets">1</span></div>
+        <div class="info-row"><span class="info-k">Siatka</span><span class="info-v" id="infoGrid">1×1</span></div>
+        <div class="info-row"><span class="info-k">Proporcje</span><span class="info-v" id="infoAspect">0.707</span></div>
+      </div>
+
+      <div class="overlap-box" id="overlapBox" style="display:none">
+        <div class="overlap-title">✂ Zakładka na sklejanie</div>
+        <div class="overlap-row">
+          <span class="lbl" style="white-space:nowrap">Szerokość</span>
+          <input type="number" id="olNum" min="0" max="40" value="20" inputmode="numeric">
+          <span class="val" style="white-space:nowrap">mm</span>
+          <input type="range" id="olRng" min="0" max="40" value="20" style="flex:1;">
+        </div>
+        <div class="overlap-note">
+          Każdy arkusz dostaje <span id="olNote">20</span> mm zakładki z sąsiedniego.
+          Czerwona linia = cięcie · Złoty pas = sklejanie.
+        </div>
+      </div>
+
+      <div>
+        <div class="lbl" style="margin-bottom:7px">Pozycja na arkuszu</div>
+        <div id="anchors"></div>
+        <div class="hint" id="ancHint">Względem arkusza 210×297 mm</div>
+      </div>
+
+      <button class="btn btn-outline" id="exportBtn" style="display:none" disabled>↓ EKSPORTUJ JPEG</button>
+
+      <div>
+        <div class="sec-title">Instrukcja</div>
+        <div class="hint">
+          1. Wgraj obraz (JPG/PNG/WEBP)<br>
+          2. Kliknij preset lub ustaw rozmiar ręcznie<br>
+          3. Ustaw zakładkę i pozycję<br>
+          4. Eksportuj → złoty pas = zakładka<br>
+          5. Przytnij wzdłuż czerwonej linii<br>
+          6. Wyrównaj i sklej arkusze
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- iOS modal -->
+<div id="modal">
+  <div id="modal-inner">
+    <h2>GOTOWE ARKUSZE</h2>
+    <p>Przytrzymaj każdy obraz →<br><strong style="color:#e8c547">„Dodaj do zdjęć"</strong><br>
+    <span style="font-size:10px;color:#555">złoty pas = zakładka · czerwona linia = cięcie</span></p>
+    <div id="sheet-list"></div>
+    <button class="btn btn-gold" id="modal-close" style="margin-top:6px">✕ ZAMKNIJ</button>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+var A4W=210,A4H=297;
+var PX96=96/25.4,PX300=300/25.4;
+var ARROWS=[['↖','↑','↗'],['←','·','→'],['↙','↓','↘']];
+var isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)&&!window.MSStream;
+
+/* ── stan ── */
+var S={img:null,w:210,h:297,aspect:297/210,ancCol:1,ancRow:1,overlap:20,exporting:false,
+       cols:1,rows:1};
+
+/* ── DOM ── */
+var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+var previewEl=document.getElementById('preview');
+var uploadBtn=document.getElementById('uploadBtn'),fileIn=document.getElementById('fileIn');
+var wNum=document.getElementById('wNum'),wRng=document.getElementById('wRng'),wVal=document.getElementById('wVal');
+var hNum=document.getElementById('hNum'),hRng=document.getElementById('hRng'),hVal=document.getElementById('hVal');
+var olNum=document.getElementById('olNum'),olRng=document.getElementById('olRng'),olNote=document.getElementById('olNote');
+var overlapBox=document.getElementById('overlapBox');
+var infoSize=document.getElementById('infoSize'),infoSheets=document.getElementById('infoSheets');
+var infoGrid=document.getElementById('infoGrid'),infoAspect=document.getElementById('infoAspect');
+var ancHint=document.getElementById('ancHint');
+var exportBtn=document.getElementById('exportBtn');
+var statusEl=document.getElementById('status');
+var modal=document.getElementById('modal'),sheetList=document.getElementById('sheet-list');
+var btn1=document.getElementById('btn1'),btn4=document.getElementById('btn4'),btn9=document.getElementById('btn9');
+document.getElementById('modal-close').addEventListener('click',function(){modal.classList.remove('open');});
+
+/* ── anchor grid ── */
+var ancBtns=[];
+[0,1,2].forEach(function(row){[0,1,2].forEach(function(col){
+  var b=document.createElement('button');
+  b.className='anc'+(row===1&&col===1?' sel':'');
+  b.textContent=ARROWS[row][col];
+  b.addEventListener('click',function(){
+    S.ancRow=row;S.ancCol=col;
+    ancBtns.forEach(function(x){x.classList.remove('sel');});b.classList.add('sel');
+    updateInfo();draw();
+  });
+  document.getElementById('anchors').appendChild(b);ancBtns.push(b);
+});});
+
+/* ── helpers ── */
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
+var _st;
+function showStatus(msg,type){
+  statusEl.textContent=msg;statusEl.style.color=type==='err'?'#ff6b6b':'#e8c547';
+  clearTimeout(_st);_st=setTimeout(function(){statusEl.textContent='';},4000);
+}
+function delay(ms){return new Promise(function(res){setTimeout(res,ms);});}
+
+/* Oblicz siatkę z wymiarów */
+function computeGrid(w,h){
+  if(w>A4W*2||h>A4H*2)return{cols:3,rows:3};
+  if(w>A4W||h>A4H)return{cols:2,rows:2};
+  return{cols:1,rows:1};
+}
+
+/* Podświetl aktywny przycisk presetu */
+function highlightPreset(){
+  var n=S.cols*S.rows;
+  [btn1,btn4,btn9].forEach(function(b){b.classList.remove('active');});
+  if(n===1)btn1.classList.add('active');
+  else if(n===4)btn4.classList.add('active');
+  else if(n===9)btn9.classList.add('active');
+}
+
+function applySize(w,h){
+  S.w=Math.round(clamp(w||10,10,840));
+  S.h=Math.round(clamp(h||10,10,1200));
+  var g=computeGrid(S.w,S.h);S.cols=g.cols;S.rows=g.rows;
+  wNum.value=S.w;wRng.value=S.w;wVal.textContent=S.w+' mm';
+  hNum.value=S.h;hRng.value=S.h;hVal.textContent=S.h+' mm';
+  highlightPreset();updateInfo();draw();
+}
+
+function applyPreset(cols,rows){
+  /* Skaluj obraz żeby zmieścił się w siatce (zachowaj proporcje) */
+  var maxW=cols*A4W,maxH=rows*A4H;
+  var sc=Math.min(maxW/(S.w||maxW),maxH/(S.h||maxH));
+  var nw=Math.round(S.w*sc),nh=Math.round(S.h*sc);
+  /* Jeśli brak obrazu — ustaw domyślny rozmiar siatki */
+  if(!S.img){nw=maxW;nh=maxH;}
+  applySize(nw,nh);
+}
+
+function applyOverlap(v){
+  S.overlap=Math.round(clamp(parseFloat(v)||0,0,40));
+  olNum.value=S.overlap;olRng.value=S.overlap;olNote.textContent=S.overlap;draw();
+}
+
+function updateInfo(){
+  var n=S.cols*S.rows;
+  var multi=n>1;
+  infoSize.textContent=S.w+' × '+S.h+' mm';
+  infoSheets.textContent=String(n);infoSheets.className='info-v'+(multi?' hi':'');
+  infoGrid.textContent=S.cols+'×'+S.rows;
+  infoAspect.textContent=(S.w/S.h).toFixed(3);
+  ancHint.textContent=multi
+    ?'Względem siatki '+(S.cols*A4W)+'×'+(S.rows*A4H)+' mm'
+    :'Względem arkusza 210×297 mm';
+  overlapBox.style.display=multi?'block':'none';
+  if(S.img){
+    exportBtn.style.display='block';exportBtn.disabled=S.exporting;
+    exportBtn.textContent='↓ EKSPORTUJ JPEG ('+n+')';
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   RYSOWANIE PODGLĄDU — HiDPI, siatka N×M
+   ═══════════════════════════════════════════════ */
+function draw(){
+  var dpr=window.devicePixelRatio||1;
+  var cw=previewEl.clientWidth-24,ch=previewEl.clientHeight-24;
+  if(cw<=0||ch<=0)return;
+  var gmW=S.cols*A4W,gmH=S.rows*A4H;
+  var sc=Math.min(cw/(gmW*PX96),ch/(gmH*PX96));
+  var pw=Math.round(gmW*PX96*sc),ph=Math.round(gmH*PX96*sc);
+  var mm=function(v){return v*PX96*sc;};
+
+  cv.width=Math.round(pw*dpr);cv.height=Math.round(ph*dpr);
+  cv.style.width=pw+'px';cv.style.height=ph+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,pw,ph);
+
+  /* Arkusze A4 */
+  for(var ri=0;ri<S.rows;ri++){for(var ci=0;ci<S.cols;ci++){
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.55)';ctx.shadowBlur=8;ctx.shadowOffsetX=2;ctx.shadowOffsetY=2;
+    ctx.fillStyle='#fff';ctx.fillRect(mm(ci*A4W),mm(ri*A4H),mm(A4W),mm(A4H));
+    ctx.restore();
+    ctx.strokeStyle='#3a3a3a';ctx.lineWidth=1;
+    ctx.strokeRect(mm(ci*A4W)+.5,mm(ri*A4H)+.5,mm(A4W)-1,mm(A4H)-1);
+  }}
+
+  /* Obraz */
+  if(S.img){
+    var ix=(S.ancCol/2)*(gmW-S.w),iy=(S.ancRow/2)*(gmH-S.h);
+    ctx.save();ctx.beginPath();ctx.rect(0,0,pw,ph);ctx.clip();
+    ctx.drawImage(S.img,mm(ix),mm(iy),mm(S.w),mm(S.h));
+    ctx.restore();
+  }else{
+    ctx.fillStyle='rgba(70,70,70,.4)';
+    ctx.font=Math.max(9,Math.round(11*sc))+"px 'Courier New',monospace";
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('Wgraj obraz, aby rozpocząć',pw/2,ph/2);
+  }
+
+  /* Zakładki w podglądzie — złote pasy + linie cięcia wzdłuż wszystkich szwów */
+  if(S.cols>1&&S.overlap>0){
+    var ol=S.overlap;
+    ctx.save();
+    /* złote pasy wzdłuż pionowych szwów */
+    for(var c=1;c<S.cols;c++){
+      ctx.fillStyle='rgba(232,197,71,.16)';
+      ctx.fillRect(mm(c*A4W-ol),0,mm(ol*2),ph);
+      ctx.strokeStyle='rgba(255,80,80,.5)';ctx.lineWidth=1;ctx.setLineDash([5,4]);
+      ctx.beginPath();ctx.moveTo(mm(c*A4W-ol),0);ctx.lineTo(mm(c*A4W-ol),ph);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(mm(c*A4W+ol),0);ctx.lineTo(mm(c*A4W+ol),ph);ctx.stroke();
+    }
+    /* złote pasy wzdłuż poziomych szwów */
+    for(var rr=1;rr<S.rows;rr++){
+      ctx.fillStyle='rgba(232,197,71,.16)';
+      ctx.fillRect(0,mm(rr*A4H-ol),pw,mm(ol*2));
+      ctx.strokeStyle='rgba(255,80,80,.5)';ctx.lineWidth=1;ctx.setLineDash([5,4]);
+      ctx.beginPath();ctx.moveTo(0,mm(rr*A4H-ol));ctx.lineTo(pw,mm(rr*A4H-ol));ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,mm(rr*A4H+ol));ctx.lineTo(pw,mm(rr*A4H+ol));ctx.stroke();
+    }
+    ctx.setLineDash([]);ctx.restore();
+  }
+
+  /* Siatka 3×3 */
+  ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=1;
+  for(var i=1;i<3;i++){
+    ctx.beginPath();ctx.moveTo(pw*i/3,0);ctx.lineTo(pw*i/3,ph);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,ph*i/3);ctx.lineTo(pw,ph*i/3);ctx.stroke();
+  }
+}
+
+/* ── resize / orientacja ── */
+var _rt;
+window.addEventListener('resize',function(){clearTimeout(_rt);_rt=setTimeout(draw,80);});
+window.addEventListener('orientationchange',function(){setTimeout(draw,200);});
+
+/* ── upload ── */
+uploadBtn.addEventListener('click',function(){fileIn.click();});
+fileIn.addEventListener('change',function(e){
+  var file=e.target.files&&e.target.files[0];if(!file)return;
+  if(file.size>10*1024*1024){showStatus('Plik zbyt duży (max 10 MB)','err');return;}
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    var img=new Image();
+    img.onload=function(){
+      var ratio=img.naturalHeight/img.naturalWidth;
+      S.aspect=ratio;S.img=img;
+      var w,h;
+      if(ratio>=1){h=A4W;w=h/ratio;}else{w=A4W;h=w*ratio;}
+      applySize(Math.round(w),Math.round(h));
+      exportBtn.style.display='block';exportBtn.disabled=false;
+      showStatus('Obraz załadowany ✓','ok');
+    };
+    img.onerror=function(){showStatus('Błąd wczytywania obrazu','err');};
+    img.src=ev.target.result;
+  };
+  reader.onerror=function(){showStatus('Błąd odczytu pliku','err');};
+  reader.readAsDataURL(file);e.target.value='';
+});
+
+/* ── preset buttons ── */
+btn1.addEventListener('click',function(){applyPreset(1,1);});
+btn4.addEventListener('click',function(){applyPreset(2,2);});
+btn9.addEventListener('click',function(){applyPreset(3,3);});
+
+/* ── inputy rozmiaru ── */
+function commitW(v){var w=clamp(parseFloat(v)||10,10,840);applySize(Math.round(w),Math.round(w*S.aspect));}
+function commitH(v){var h=clamp(parseFloat(v)||10,10,1200);applySize(Math.round(h/S.aspect),Math.round(h));}
+wNum.addEventListener('input',function(){wVal.textContent=(this.value||'?')+' mm';});
+wNum.addEventListener('blur',function(){commitW(this.value);});
+wNum.addEventListener('keydown',function(e){if(e.key==='Enter')this.blur();});
+hNum.addEventListener('input',function(){hVal.textContent=(this.value||'?')+' mm';});
+hNum.addEventListener('blur',function(){commitH(this.value);});
+hNum.addEventListener('keydown',function(e){if(e.key==='Enter')this.blur();});
+wRng.addEventListener('input',function(){commitW(this.value);});
+hRng.addEventListener('input',function(){commitH(this.value);});
+
+/* ── zakładka ── */
+olNum.addEventListener('input',function(){olNote.textContent=this.value||'0';});
+olNum.addEventListener('blur',function(){applyOverlap(this.value);});
+olNum.addEventListener('keydown',function(e){if(e.key==='Enter')this.blur();});
+olRng.addEventListener('input',function(){applyOverlap(this.value);});
+
+/* ═══════════════════════════════════════════════
+   EKSPORT — dowolna siatka cols × rows
+   ═══════════════════════════════════════════════ */
+exportBtn.addEventListener('click',function(){if(!S.exporting&&S.img)doExport();});
+
+function canvasToDataURL(ec){
+  return new Promise(function(res,rej){
+    ec.toBlob(function(blob){
+      if(!blob){rej(new Error('canvas pusty'));return;}
+      var fr=new FileReader();
+      fr.onload=function(e){res(e.target.result);};
+      fr.onerror=function(){rej(new Error('FileReader'));};
+      fr.readAsDataURL(blob);
+    },'image/jpeg',0.95);
+  });
+}
+
+async function doExport(){
+  S.exporting=true;exportBtn.disabled=true;
+  exportBtn.textContent='⏳ EKSPORTOWANIE…';showStatus('Generuję arkusze…','ok');
+  try{
+    var gmW=S.cols*A4W,gmH=S.rows*A4H;
+    var ix=(S.ancCol/2)*(gmW-S.w),iy=(S.ancRow/2)*(gmH-S.h);
+    var iWpx=S.w*PX300,iHpx=S.h*PX300;
+    var ol=S.cols>1?S.overlap:0;
+    var A4Wpx=Math.round(A4W*PX300),A4Hpx=Math.round(A4H*PX300);
+    var OLpx=Math.round(ol*PX300);
+
+    /* Generuj listę wszystkich arkuszy */
+    var defs=[];
+    for(var rr=0;rr<S.rows;rr++){for(var cc=0;cc<S.cols;cc++){
+      defs.push({n:'sheet_'+(rr*S.cols+cc+1),col:cc,row:rr});
+    }}
+
+    var results=[];
+    for(var di=0;di<defs.length;di++){
+      var d=defs[di];
+      var hasL=d.col>0,hasR=d.col<S.cols-1,hasT=d.row>0,hasB=d.row<S.rows-1;
+
+      /* Obszar tego arkusza (z zakładkami) w mm */
+      var startX=d.col*A4W-(hasL?ol:0);
+      var startY=d.row*A4H-(hasT?ol:0);
+      var spanW=A4W+(hasL?ol:0)+(hasR?ol:0);
+      var spanH=A4H+(hasT?ol:0)+(hasB?ol:0);
+
+      /* Pomiń jeśli brak nakładki z obrazem */
+      if(ix+S.w<=startX||ix>=startX+spanW||iy+S.h<=startY||iy>=startY+spanH)continue;
+
+      var canvW=A4Wpx+(hasL?OLpx:0)+(hasR?OLpx:0);
+      var canvH=A4Hpx+(hasT?OLpx:0)+(hasB?OLpx:0);
+      var ec=document.createElement('canvas');ec.width=canvW;ec.height=canvH;
+      var ectx=ec.getContext('2d');
+      ectx.fillStyle='#fff';ectx.fillRect(0,0,canvW,canvH);
+
+      /* Obraz */
+      ectx.drawImage(S.img,(ix-startX)*PX300,(iy-startY)*PX300,iWpx,iHpx);
+
+      /* Złote pasy zakładki */
+      if(ol>0){
+        ectx.fillStyle='rgba(232,197,71,0.22)';
+        if(hasL)ectx.fillRect(0,0,OLpx,canvH);
+        if(hasR)ectx.fillRect(canvW-OLpx,0,OLpx,canvH);
+        if(hasT)ectx.fillRect(0,0,canvW,OLpx);
+        if(hasB)ectx.fillRect(0,canvH-OLpx,canvW,OLpx);
+        /* Czerwone linie cięcia */
+        ectx.save();
+        ectx.strokeStyle='rgba(220,30,30,0.85)';ectx.lineWidth=6;ectx.setLineDash([40,20]);
+        if(hasL){ectx.beginPath();ectx.moveTo(OLpx,0);ectx.lineTo(OLpx,canvH);ectx.stroke();}
+        if(hasR){ectx.beginPath();ectx.moveTo(canvW-OLpx,0);ectx.lineTo(canvW-OLpx,canvH);ectx.stroke();}
+        if(hasT){ectx.beginPath();ectx.moveTo(0,OLpx);ectx.lineTo(canvW,OLpx);ectx.stroke();}
+        if(hasB){ectx.beginPath();ectx.moveTo(0,canvH-OLpx);ectx.lineTo(canvW,canvH-OLpx);ectx.stroke();}
+        ectx.restore();
+      }
+
+      /* Etykieta */
+      var lbl='Arkusz '+d.n.replace('sheet_','')+(ol>0?' · zakładka '+ol+'mm · przytnij na czerwonej linii':'');
+      var fs=Math.max(22,Math.round(A4Wpx*0.013));
+      ectx.fillStyle='rgba(0,0,0,0.3)';
+      ectx.font='bold '+fs+'px Courier New,monospace';
+      ectx.textBaseline='top';
+      ectx.fillText(lbl,(hasL?OLpx:0)+18,(hasT?OLpx:0)+14);
+
+      var dataUrl=await canvasToDataURL(ec);
+      results.push({name:d.n,dataUrl:dataUrl,hasOl:ol>0});
+      await delay(60);
+    }
+
+    if(!results.length)showStatus('Brak obszaru do eksportu','err');
+    else if(isIOS)showIOSModal(results);
+    else desktopDownload(results);
+
+  }catch(err){showStatus('Błąd: '+err.message,'err');console.error(err);}
+  S.exporting=false;exportBtn.disabled=false;
+  exportBtn.textContent='↓ EKSPORTUJ JPEG ('+(S.cols*S.rows)+')';
+}
+
+function desktopDownload(results){
+  results.forEach(function(r,i){
+    setTimeout(function(){
+      var a=document.createElement('a');a.href=r.dataUrl;a.download=r.name+'.jpg';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+    },i*450);
+  });
+  var n=results.length;
+  showStatus('Pobrano '+n+' '+(n===1?'plik':n<5?'pliki':'plików')+' ✓','ok');
+}
+
+function showIOSModal(results){
+  sheetList.innerHTML='';
+  results.forEach(function(r){
+    var wrap=document.createElement('div');wrap.className='sheet-wrap';
+    var lbl=document.createElement('div');lbl.className='sheet-label';
+    lbl.textContent=r.name.replace('sheet_','Arkusz ')+(r.hasOl?' · złoty=zakładka · czerwony=cięcie':'');
+    var img=document.createElement('img');img.src=r.dataUrl;img.alt=r.name;
+    wrap.appendChild(lbl);wrap.appendChild(img);sheetList.appendChild(wrap);
+  });
+  modal.classList.add('open');
+  showStatus(results.length+' arkusz(y) gotowe ✓','ok');
+}
+
+/* ── init ── */
+highlightPreset();updateInfo();draw();
+})();
+</script>
+</body>
+</html>
