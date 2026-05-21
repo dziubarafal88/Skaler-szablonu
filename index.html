@@ -840,6 +840,25 @@ function przygotuj(gray, w, h, levels, sigma){
   /* 4. Lekkie wygładzenie granic stref */
   return gaussBlur(res, w, h, 0.4);
 }
+/* Detekcja granic stref posteryzacji — idealna dla przygotowanego obrazu.
+   Sprawdza piksele gdzie sąsiad ma inną wartość → czyste, dokładne krawędzie */
+function posterEdges(gray, w, h, smoothAmt){
+  var e=new Float32Array(w*h);
+  for(var y=0;y<h;y++){for(var x=0;x<w;x++){
+    var i=y*w+x, v=gray[i];
+    var diff=0;
+    if(x>0)   diff=Math.max(diff,Math.abs(gray[i-1]-v));
+    if(x<w-1) diff=Math.max(diff,Math.abs(gray[i+1]-v));
+    if(y>0)   diff=Math.max(diff,Math.abs(gray[(y-1)*w+x]-v));
+    if(y<h-1) diff=Math.max(diff,Math.abs(gray[(y+1)*w+x]-v));
+    e[i]= diff>0.04 ? Math.min(1.0,diff*4.0) : 0.0;
+  }}
+  var bl=gaussBlur(e,w,h,smoothAmt);
+  var res=new Float32Array(w*h);
+  for(var i=0;i<w*h;i++) res[i]=1.0-Math.min(1.0,bl[i]*2.5);
+  return res;
+}
+
 function canny(gray, w, h, sigma, lowT, highT){
   var bl=gaussBlur(gray,w,h,sigma);
   var Gm=new Float32Array(w*h), Gd=new Float32Array(w*h);
@@ -925,18 +944,22 @@ function processKalka(img, maxW){
     res=przygotuj(gray, d.w, d.h, levels, sigma);
     /* Wynik normalny (nie inwertowany) — to nadal zdjęcie, nie kalka */
   }else if(kalkaMode==='krawedzie'){
-    /* Canny: czyste krawędzie */
-    var lowT=(1.0-sens/100)*0.25;
-    var highT=lowT*2.5;
-    var cannyRes=canny(gray, d.w, d.h, sigma, lowT, highT);
-    /* Anti-aliasing: rozmyj mapę krawędzi → gładkie linie zamiast schodków */
-    var smoothAmt=0.3+(thresh/100)*2.2; /* suwak Wygładzenie: 0.3–2.5 */
-    var edgesPos=new Float32Array(d.w*d.h);
-    for(var i=0;i<d.w*d.h;i++) edgesPos[i]=1.0-cannyRes[i]; /* krawędzie jako pozytyw */
-    var blEdges=gaussBlur(edgesPos, d.w, d.h, smoothAmt);
-    res=new Float32Array(d.w*d.h);
-    var boost=1.6+smoothAmt*0.4;
-    for(var i=0;i<d.w*d.h;i++) res[i]=1.0-Math.min(1.0, blEdges[i]*boost);
+    var smoothAmt=0.3+(thresh/100)*2.2;
+    if(preparedCanvas){
+      /* Automatyczna detekcja granic stref — idealna dla posteryzacji */
+      res=posterEdges(gray, d.w, d.h, smoothAmt);
+    }else{
+      /* Canny dla obrazu oryginalnego */
+      var lowT=(1.0-sens/100)*0.25;
+      var highT=lowT*2.5;
+      var cannyRes=canny(gray, d.w, d.h, sigma, lowT, highT);
+      var edgesPos=new Float32Array(d.w*d.h);
+      for(var i=0;i<d.w*d.h;i++) edgesPos[i]=1.0-cannyRes[i];
+      var blEdges=gaussBlur(edgesPos, d.w, d.h, smoothAmt);
+      res=new Float32Array(d.w*d.h);
+      var boost=1.6+smoothAmt*0.4;
+      for(var i=0;i<d.w*d.h;i++) res[i]=1.0-Math.min(1.0, blEdges[i]*boost);
+    }
   }else{
     /* Rysunek: próg binarny */
     var t=255-Math.round(thresh*2.2);
@@ -964,9 +987,9 @@ function refreshKalkaPreview(){
       if(kalkaMode==='foto'){
         kalkaStatus.textContent='Podgląd posteryzacji · kliknij "→ Dalej: Krawędzie"';
       }else if(preparedCanvas){
-        kalkaStatus.textContent='✓ Krawędzie na przygotowanym obrazie · wyreguluj suwaki';
+        kalkaStatus.textContent='✓ AUTO: granice stref posteryzacji · wyreguluj wygładzenie';
       }else{
-        kalkaStatus.textContent='Krawędzie na oryginale · wyreguluj suwaki';
+        kalkaStatus.textContent='Krawędzie Canny na oryginale · wyreguluj suwaki';
       }
     }catch(e){kalkaStatus.textContent='Błąd: '+e.message;}
   },120);
