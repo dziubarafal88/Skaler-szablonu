@@ -186,6 +186,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
       </div>
 
       <button class="btn btn-outline" id="exportBtn" style="display:none" disabled>↓ EKSPORTUJ JPEG</button>
+<button class="btn btn-outline" id="pdfBtn" style="display:none;margin-top:-4px;border-color:#aaa;color:#aaa;" disabled>⬛ ZAPISZ JAKO PDF</button>
 
       <div>
         <div class="sec-title">Instrukcja</div>
@@ -214,6 +215,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 (function(){
 'use strict';
@@ -234,7 +236,7 @@ var wNum=document.getElementById('wNum'),wRng=document.getElementById('wRng'),wV
 var hNum=document.getElementById('hNum'),hRng=document.getElementById('hRng'),hVal=document.getElementById('hVal');
 var olNum=document.getElementById('olNum'),olRng=document.getElementById('olRng'),olNote=document.getElementById('olNote');
 var overlapBox=document.getElementById('overlapBox');
-var infoSize=document.getElementById('infoSize'),infoSheets=document.getElementById('infoSheets');
+var pdfBtn=document.getElementById('pdfBtn');
 var infoGrid=document.getElementById('infoGrid'),infoAspect=document.getElementById('infoAspect');
 var ancHint=document.getElementById('ancHint');
 var exportBtn=document.getElementById('exportBtn');
@@ -320,6 +322,8 @@ function updateInfo(){
   if(S.img){
     exportBtn.style.display='block';exportBtn.disabled=S.exporting;
     exportBtn.textContent='↓ EKSPORTUJ JPEG ('+n+')';
+    pdfBtn.style.display='block';pdfBtn.disabled=S.exporting;
+    pdfBtn.textContent='⬛ ZAPISZ JAKO PDF ('+n+' str.)';
   }
 }
 
@@ -414,6 +418,7 @@ fileIn.addEventListener('change',function(e){
       if(ratio>=1){h=A4W;w=h/ratio;}else{w=A4W;h=w*ratio;}
       applySize(Math.round(w),Math.round(h));
       exportBtn.style.display='block';exportBtn.disabled=false;
+      pdfBtn.style.display='block';pdfBtn.disabled=false;
       showStatus('Obraz załadowany ✓','ok');
     };
     img.onerror=function(){showStatus('Błąd wczytywania obrazu','err');};
@@ -450,6 +455,7 @@ olRng.addEventListener('input',function(){applyOverlap(this.value);});
    EKSPORT — dowolna siatka cols × rows
    ═══════════════════════════════════════════════ */
 exportBtn.addEventListener('click',function(){if(!S.exporting&&S.img)doExport();});
+pdfBtn.addEventListener('click',function(){if(!S.exporting&&S.img)doExportPDF();});
 
 function canvasToDataURL(ec){
   return new Promise(function(res,rej){
@@ -538,8 +544,9 @@ async function doExport(){
     else desktopDownload(results);
 
   }catch(err){showStatus('Błąd: '+err.message,'err');console.error(err);}
-  S.exporting=false;exportBtn.disabled=false;
+  S.exporting=false;exportBtn.disabled=false;pdfBtn.disabled=false;
   exportBtn.textContent='↓ EKSPORTUJ JPEG ('+(S.cols*S.rows)+')';
+  pdfBtn.textContent='⬛ ZAPISZ JAKO PDF ('+(S.cols*S.rows)+' str.)';
 }
 
 function desktopDownload(results){
@@ -564,6 +571,107 @@ function showIOSModal(results){
   });
   modal.classList.add('open');
   showStatus(results.length+' arkusz(y) gotowe ✓','ok');
+}
+
+/* ═══════════════════════════════════════════════
+   EKSPORT PDF — wszystkie arkusze w jednym pliku
+   ═══════════════════════════════════════════════ */
+async function doExportPDF(){
+  S.exporting=true;
+  exportBtn.disabled=true;pdfBtn.disabled=true;
+  pdfBtn.textContent='⏳ GENERUJĘ PDF…';
+  showStatus('Generuję PDF…','ok');
+  try{
+    /* 150 dpi — dobra jakość, rozsądny rozmiar pliku */
+    var PX150=150/25.4;
+    var gmW=S.cols*A4W,gmH=S.rows*A4H;
+    var ix=(S.ancCol/2)*(gmW-S.w),iy=(S.ancRow/2)*(gmH-S.h);
+    var iWpx=S.w*PX150,iHpx=S.h*PX150;
+    var ol=S.cols>1?S.overlap:0;
+    var A4Wpx=Math.round(A4W*PX150);
+    var A4Hpx=Math.round(A4H*PX150);
+    var OLpx=Math.round(ol*PX150);
+
+    var defs=[];
+    for(var rr=0;rr<S.rows;rr++){for(var cc=0;cc<S.cols;cc++){
+      defs.push({n:'sheet_'+(rr*S.cols+cc+1),col:cc,row:rr});
+    }}
+
+    /* Zbierz strony które mają treść */
+    var pages=[];
+    for(var di=0;di<defs.length;di++){
+      var d=defs[di];
+      var hasL=d.col>0,hasR=d.col<S.cols-1,hasT=d.row>0,hasB=d.row<S.rows-1;
+      var startX=d.col*A4W-(hasL?ol:0);
+      var startY=d.row*A4H-(hasT?ol:0);
+      var spanW=A4W+(hasL?ol:0)+(hasR?ol:0);
+      var spanH=A4H+(hasT?ol:0)+(hasB?ol:0);
+      if(ix+S.w<=startX||ix>=startX+spanW||iy+S.h<=startY||iy>=startY+spanH)continue;
+
+      var canvW=A4Wpx+(hasL?OLpx:0)+(hasR?OLpx:0);
+      var canvH=A4Hpx+(hasT?OLpx:0)+(hasB?OLpx:0);
+      var ec=document.createElement('canvas');ec.width=canvW;ec.height=canvH;
+      var ectx=ec.getContext('2d');
+      ectx.fillStyle='#fff';ectx.fillRect(0,0,canvW,canvH);
+      ectx.drawImage(S.img,(ix-startX)*PX150,(iy-startY)*PX150,iWpx,iHpx);
+
+      if(ol>0){
+        ectx.fillStyle='rgba(232,197,71,0.22)';
+        if(hasL)ectx.fillRect(0,0,OLpx,canvH);
+        if(hasR)ectx.fillRect(canvW-OLpx,0,OLpx,canvH);
+        if(hasT)ectx.fillRect(0,0,canvW,OLpx);
+        if(hasB)ectx.fillRect(0,canvH-OLpx,canvW,OLpx);
+        ectx.save();
+        ectx.strokeStyle='rgba(220,30,30,0.85)';ectx.lineWidth=3;ectx.setLineDash([20,10]);
+        if(hasL){ectx.beginPath();ectx.moveTo(OLpx,0);ectx.lineTo(OLpx,canvH);ectx.stroke();}
+        if(hasR){ectx.beginPath();ectx.moveTo(canvW-OLpx,0);ectx.lineTo(canvW-OLpx,canvH);ectx.stroke();}
+        if(hasT){ectx.beginPath();ectx.moveTo(0,OLpx);ectx.lineTo(canvW,OLpx);ectx.stroke();}
+        if(hasB){ectx.beginPath();ectx.moveTo(0,canvH-OLpx);ectx.lineTo(canvW,canvH-OLpx);ectx.stroke();}
+        ectx.restore();
+      }
+      /* Etykieta */
+      var fs=Math.max(12,Math.round(A4Wpx*0.013));
+      ectx.fillStyle='rgba(0,0,0,0.28)';
+      ectx.font='bold '+fs+'px Courier New,monospace';
+      ectx.textBaseline='top';
+      ectx.fillText('Arkusz '+d.n.replace('sheet_','')+'/'+defs.length+(ol>0?' · zakładka '+ol+'mm':''),
+        (hasL?OLpx:0)+10,(hasT?OLpx:0)+8);
+
+      /* Rozmiar strony PDF w mm */
+      var pgW=A4W+(hasL?ol:0)+(hasR?ol:0);
+      var pgH=A4H+(hasT?ol:0)+(hasB?ol:0);
+      pages.push({canvas:ec,wMm:pgW,hMm:pgH,dataUrl:ec.toDataURL('image/jpeg',0.92)});
+      await delay(50);
+    }
+
+    if(!pages.length){showStatus('Brak treści do eksportu','err');return;}
+
+    /* Buduj PDF */
+    var jsPDF=window.jspdf.jsPDF;
+    var first=pages[0];
+    var pdf=new jsPDF({
+      orientation: first.wMm>first.hMm?'landscape':'portrait',
+      unit:'mm',
+      format:[first.wMm,first.hMm]
+    });
+
+    pages.forEach(function(p,i){
+      if(i>0){
+        pdf.addPage([p.wMm,p.hMm], p.wMm>p.hMm?'landscape':'portrait');
+      }
+      pdf.addImage(p.dataUrl,'JPEG',0,0,p.wMm,p.hMm);
+    });
+
+    pdf.save('szablon-tatuazu.pdf');
+    showStatus('PDF zapisany ✓ ('+pages.length+' str.)','ok');
+
+  }catch(err){
+    showStatus('Błąd PDF: '+err.message,'err');console.error(err);
+  }
+  S.exporting=false;exportBtn.disabled=false;pdfBtn.disabled=false;
+  var nn=S.cols*S.rows;
+  exportBtn.textContent='↓ EKSPORTUJ JPEG ('+nn+')';
+  pdfBtn.textContent='⬛ ZAPISZ JAKO PDF ('+nn+' str.)';
 }
 
 /* ── init ── */
