@@ -236,8 +236,9 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
     <div id="kalka-status">Przetwarzanie…</div>
     <div class="ks">
       <div class="mode-row">
-        <button class="mode-btn active" id="kmode-foto">📷 Fotografia</button>
-        <button class="mode-btn" id="kmode-rysunek">✏️ Rysunek/Szkic</button>
+        <button class="mode-btn active" id="kmode-foto">📷 Szkic</button>
+        <button class="mode-btn" id="kmode-krawedzie">🔍 Krawędzie</button>
+        <button class="mode-btn" id="kmode-rysunek">✏️ Rysunek</button>
       </div>
       <div>
         <div class="ks-row">
@@ -814,7 +815,54 @@ function threshold(gray, w, h, sigma, thresh){
   return res;
 }
 
-/* Zbuduj ImageData z wynikowej mapy (białe tło, czarne linie) */
+/* Canny edge detection — czyste, cienkie krawędzie */
+function canny(gray, w, h, sigma, lowT, highT){
+  var bl=gaussBlur(gray,w,h,sigma);
+  var Gm=new Float32Array(w*h), Gd=new Float32Array(w*h);
+  /* Sobel */
+  for(var y=1;y<h-1;y++){for(var x=1;x<w-1;x++){
+    var i=y*w+x;
+    var gx=(-bl[(y-1)*w+(x-1)]-2*bl[y*w+(x-1)]-bl[(y+1)*w+(x-1)]
+            +bl[(y-1)*w+(x+1)]+2*bl[y*w+(x+1)]+bl[(y+1)*w+(x+1)]);
+    var gy=( bl[(y-1)*w+(x-1)]+2*bl[(y-1)*w+x]+bl[(y-1)*w+(x+1)]
+            -bl[(y+1)*w+(x-1)]-2*bl[(y+1)*w+x]-bl[(y+1)*w+(x+1)]);
+    Gm[i]=Math.sqrt(gx*gx+gy*gy);
+    Gd[i]=Math.atan2(gy,gx);
+  }}
+  /* Non-maximum suppression */
+  var nms=new Float32Array(w*h);
+  for(var y=1;y<h-1;y++){for(var x=1;x<w-1;x++){
+    var i=y*w+x;
+    var a=Gd[i]*180/Math.PI; if(a<0)a+=180;
+    var q,r;
+    if(a<22.5||a>=157.5){q=Gm[y*w+(x+1)];r=Gm[y*w+(x-1)];}
+    else if(a<67.5){q=Gm[(y+1)*w+(x-1)];r=Gm[(y-1)*w+(x+1)];}
+    else if(a<112.5){q=Gm[(y-1)*w+x];r=Gm[(y+1)*w+x];}
+    else{q=Gm[(y-1)*w+(x-1)];r=Gm[(y+1)*w+(x+1)];}
+    nms[i]=(Gm[i]>=q&&Gm[i]>=r)?Gm[i]:0;
+  }}
+  /* Podwójny próg */
+  var e=new Float32Array(w*h);
+  for(var i=0;i<w*h;i++){
+    if(nms[i]>=highT)e[i]=1.0;
+    else if(nms[i]>=lowT)e[i]=0.5;
+  }
+  /* Histereza */
+  for(var y=1;y<h-1;y++){for(var x=1;x<w-1;x++){
+    var i=y*w+x;
+    if(e[i]===0.5){
+      var strong=false;
+      for(var dy=-1;dy<=1&&!strong;dy++){for(var dx=-1;dx<=1&&!strong;dx++){
+        if(e[(y+dy)*w+(x+dx)]===1.0)strong=true;
+      }}
+      e[i]=strong?1.0:0.0;
+    }
+  }}
+  /* Wynik: czarne linie na białym tle */
+  var res=new Float32Array(w*h);
+  for(var i=0;i<w*h;i++)res[i]=1.0-e[i];
+  return res;
+}
 function buildResult(res, w, h){
   var out=new ImageData(w,h);
   for(var i=0;i<w*h;i++){
@@ -843,16 +891,28 @@ function processKalka(img, maxW){
   var d=getScaledImageData(img, maxW);
   var gray=toGray(d.idata.data, d.w*d.h);
   var res;
-  if(kalkaMode==='foto'){
-    /* XDoG: p blisko 1 = więcej krawędzi, phi = ostrość, eps = próg */
-    var p=1.0-(sens/100)*0.08;          /* 0.92 - 1.0 */
-    var phi=5+sens*0.6;                  /* 5 - 65 */
-    var eps=(thresh-50)/500;             /* -0.1 do +0.1 */
-    res=xdog(gray, d.w, d.h, sigma, 1.6, p, phi, eps);
+
+  if(kalkaMode==='krawedzie'){
+    /* Canny: czyste, cienkie krawędzie — najlepsza metoda dla fotek */
+    var lowT =(1.0-sens/100)*0.25;           /* czułość → próg dolny */
+    var highT=lowT*(1.5+thresh/50);          /* próg górny = lowT × ratio */
+    res=canny(gray, d.w, d.h, sigma, lowT, highT);
+  }else if(kalkaMode==='foto'){
+    /* XDoG ze twardym progiem → binarne czarne linie */
+    var p=1.0-(sens/100)*0.08;
+    var phi=5+sens*0.6;
+    var eps=(thresh-50)/500;
+    var soft=xdog(gray, d.w, d.h, sigma, 1.6, p, phi, eps);
+    /* Konwertuj na binarne: 1=białe tło, 0=czarna linia */
+    var cutoff=0.85+(thresh/100)*0.12;
+    res=new Float32Array(d.w*d.h);
+    for(var i=0;i<d.w*d.h;i++) res[i]=soft[i]>=cutoff?1.0:0.0;
   }else{
-    /* Próg: prosty, dobry dla szkiców */
-    var t=255-Math.round(thresh*2.2);    /* wyższy próg = cieńsze linie */
-    res=threshold(gray, d.w, d.h, sigma*0.4, t);
+    /* Próg binarny dla rysunków */
+    var t=255-Math.round(thresh*2.2);
+    var raw=threshold(gray, d.w, d.h, sigma*0.4, t);
+    res=new Float32Array(d.w*d.h);
+    for(var i=0;i<d.w*d.h;i++) res[i]=raw[i]>0.5?1.0:0.0;
   }
   return {idata:buildResult(res, d.w, d.h), w:d.w, h:d.h};
 }
@@ -882,18 +942,33 @@ document.getElementById('kalka-close').addEventListener('click',function(){
   kalkaModal.classList.remove('open');
 });
 
-/* Tryb */
+var kModeKraw=document.getElementById('kmode-krawedzie');
+
+/* Tryb Szkic (XDoG) */
 kModeFoto.addEventListener('click',function(){
-  kalkaMode='foto';kModeFoto.classList.add('active');kModeRys.classList.remove('active');
-  /* domyślne wartości dla fotek */
+  kalkaMode='foto';
+  [kModeFoto,kModeKraw,kModeRys].forEach(function(b){b.classList.remove('active');});
+  kModeFoto.classList.add('active');
   kBlurEl.value=1.5;kBlurVal.textContent='1.5';
   kSensEl.value=50;kSensVal.textContent='50';
   kThreshEl.value=50;kThreshVal.textContent='50';
   refreshKalkaPreview();
 });
+/* Tryb Krawędzie (Canny) */
+kModeKraw.addEventListener('click',function(){
+  kalkaMode='krawedzie';
+  [kModeFoto,kModeKraw,kModeRys].forEach(function(b){b.classList.remove('active');});
+  kModeKraw.classList.add('active');
+  kBlurEl.value=1.2;kBlurVal.textContent='1.2';
+  kSensEl.value=70;kSensVal.textContent='70';
+  kThreshEl.value=40;kThreshVal.textContent='40';
+  refreshKalkaPreview();
+});
+/* Tryb Rysunek (próg) */
 kModeRys.addEventListener('click',function(){
-  kalkaMode='rysunek';kModeRys.classList.add('active');kModeFoto.classList.remove('active');
-  /* domyślne wartości dla rysunków */
+  kalkaMode='rysunek';
+  [kModeFoto,kModeKraw,kModeRys].forEach(function(b){b.classList.remove('active');});
+  kModeRys.classList.add('active');
   kBlurEl.value=0.5;kBlurVal.textContent='0.5';
   kSensEl.value=70;kSensVal.textContent='70';
   kThreshEl.value=60;kThreshVal.textContent='60';
