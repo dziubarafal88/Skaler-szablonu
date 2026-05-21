@@ -91,6 +91,29 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
 .hint{font-size:9px;color:#2a2a2a;margin-top:4px;line-height:1.8;}
 .sec-title{font-size:9px;color:#3a3a3a;letter-spacing:2px;text-transform:uppercase;
   margin-bottom:6px;border-top:1px solid #1e1e1e;padding-top:10px;}
+/* ── kalka modal ── */
+#kalka-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.96);
+  z-index:200;flex-direction:column;align-items:center;overflow-y:auto;padding:16px;}
+#kalka-modal.open{display:flex;}
+#kalka-inner{width:100%;max-width:560px;display:flex;flex-direction:column;gap:10px;}
+#kalka-inner h2{font-size:13px;color:#e8c547;letter-spacing:3px;text-align:center;text-transform:uppercase;}
+#kalka-preview-wrap{background:#000;border:1px solid #333;border-radius:3px;
+  display:flex;align-items:center;justify-content:center;min-height:200px;overflow:hidden;}
+#kalka-cv{display:block;max-width:100%;max-height:55vh;}
+.ks{display:flex;flex-direction:column;gap:9px;background:#111;border:1px solid #1e1e1e;
+  border-radius:3px;padding:10px 12px;}
+.ks-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.ks-row .lbl{font-size:9px;color:#555;letter-spacing:2px;text-transform:uppercase;}
+.ks-row .val{font-size:11px;color:#e8c547;font-weight:bold;}
+.mode-row{display:flex;gap:6px;}
+.mode-btn{flex:1;padding:7px 0;background:#1a1a1a;color:#555;border:1px solid #2a2a2a;
+  border-radius:3px;font-family:'Courier New',monospace;font-size:10px;font-weight:bold;
+  letter-spacing:1px;cursor:pointer;text-transform:uppercase;text-align:center;}
+.mode-btn.active{background:#1e1900;color:#e8c547;border-color:#e8c547;}
+#kalka-status{font-size:10px;text-align:center;color:#555;min-height:14px;}
+.kalka-btns{display:flex;gap:8px;}
+.kalka-btns button{flex:1;}
+
 /* iOS modal */
 #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.93);
   z-index:100;flex-direction:column;align-items:center;overflow-y:auto;padding:20px;}
@@ -187,6 +210,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
 
       <button class="btn btn-outline" id="exportBtn" style="display:none" disabled>↓ EKSPORTUJ JPEG</button>
 <button class="btn btn-outline" id="pdfBtn" style="display:none;margin-top:-4px;border-color:#aaa;color:#aaa;" disabled>⬛ ZAPISZ JAKO PDF</button>
+<button class="btn btn-outline" id="kalkaBtn" style="display:none;margin-top:-4px;border-color:#7a9a7a;color:#7a9a7a;" disabled>✦ WYKONAJ KALKĘ</button>
 
       <div>
         <div class="sec-title">Instrukcja</div>
@@ -200,6 +224,49 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
         </div>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- Kalka modal -->
+<div id="kalka-modal">
+  <div id="kalka-inner">
+    <h2>✦ WYKONAJ KALKĘ</h2>
+    <div id="kalka-preview-wrap"><canvas id="kalka-cv"></canvas></div>
+    <div id="kalka-status">Przetwarzanie…</div>
+    <div class="ks">
+      <div class="mode-row">
+        <button class="mode-btn active" id="kmode-foto">📷 Fotografia</button>
+        <button class="mode-btn" id="kmode-rysunek">✏️ Rysunek/Szkic</button>
+      </div>
+      <div>
+        <div class="ks-row">
+          <span class="lbl">Rozmycie</span>
+          <span class="val" id="kBlurVal">1.5</span>
+        </div>
+        <input type="range" id="kBlur" min="0.3" max="5" step="0.1" value="1.5">
+      </div>
+      <div>
+        <div class="ks-row">
+          <span class="lbl">Czułość krawędzi</span>
+          <span class="val" id="kSensVal">50</span>
+        </div>
+        <input type="range" id="kSens" min="1" max="100" step="1" value="50">
+      </div>
+      <div>
+        <div class="ks-row">
+          <span class="lbl">Próg (grubość linii)</span>
+          <span class="val" id="kThreshVal">50</span>
+        </div>
+        <input type="range" id="kThresh" min="1" max="100" step="1" value="50">
+      </div>
+    </div>
+    <div class="kalka-btns">
+      <button class="btn btn-gold" id="kalka-apply">✓ ZASTOSUJ</button>
+      <button class="btn btn-outline" id="kalka-close">✕ ANULUJ</button>
+    </div>
+    <div class="hint" style="text-align:center;margin-top:4px;">
+      Zastosuj → kalka zastąpi oryginał · możesz dalej skalować i eksportować
     </div>
   </div>
 </div>
@@ -237,6 +304,17 @@ var hNum=document.getElementById('hNum'),hRng=document.getElementById('hRng'),hV
 var olNum=document.getElementById('olNum'),olRng=document.getElementById('olRng'),olNote=document.getElementById('olNote');
 var overlapBox=document.getElementById('overlapBox');
 var pdfBtn=document.getElementById('pdfBtn');
+var kalkaBtn=document.getElementById('kalkaBtn');
+var kalkaModal=document.getElementById('kalka-modal');
+var kalkaCv=document.getElementById('kalka-cv');
+var kCtx=kalkaCv.getContext('2d');
+var kBlurEl=document.getElementById('kBlur'),kBlurVal=document.getElementById('kBlurVal');
+var kSensEl=document.getElementById('kSens'),kSensVal=document.getElementById('kSensVal');
+var kThreshEl=document.getElementById('kThresh'),kThreshVal=document.getElementById('kThreshVal');
+var kModeFoto=document.getElementById('kmode-foto'),kModeRys=document.getElementById('kmode-rysunek');
+var kalkaStatus=document.getElementById('kalka-status');
+var kalkaMode='foto';
+var _kalkaTimer;
 var infoGrid=document.getElementById('infoGrid'),infoAspect=document.getElementById('infoAspect');
 var ancHint=document.getElementById('ancHint');
 var exportBtn=document.getElementById('exportBtn');
@@ -324,6 +402,7 @@ function updateInfo(){
     exportBtn.textContent='↓ EKSPORTUJ JPEG ('+n+')';
     pdfBtn.style.display='block';pdfBtn.disabled=S.exporting;
     pdfBtn.textContent='⬛ ZAPISZ JAKO PDF ('+n+' str.)';
+    kalkaBtn.style.display='block';kalkaBtn.disabled=S.exporting;
   }
 }
 
@@ -419,6 +498,7 @@ fileIn.addEventListener('change',function(e){
       applySize(Math.round(w),Math.round(h));
       exportBtn.style.display='block';exportBtn.disabled=false;
       pdfBtn.style.display='block';pdfBtn.disabled=false;
+      kalkaBtn.style.display='block';kalkaBtn.disabled=false;
       showStatus('Obraz załadowany ✓','ok');
     };
     img.onerror=function(){showStatus('Błąd wczytywania obrazu','err');};
@@ -673,6 +753,178 @@ async function doExportPDF(){
   exportBtn.textContent='↓ EKSPORTUJ JPEG ('+nn+')';
   pdfBtn.textContent='⬛ ZAPISZ JAKO PDF ('+nn+' str.)';
 }
+
+/* ═══════════════════════════════════════════════
+   KALKA — XDoG + próg + Canny-lite
+   ═══════════════════════════════════════════════ */
+
+/* Szybkie rozmycie Gaussa — rozdzielne (poziomo + pionowo) */
+function gaussBlur(gray, w, h, sigma){
+  if(sigma<0.1)return gray.slice();
+  var r=Math.max(1,Math.ceil(sigma*2.5));
+  var size=r*2+1;
+  var kern=new Float32Array(size);
+  var sum=0;
+  for(var i=0;i<size;i++){var x=i-r;kern[i]=Math.exp(-(x*x)/(2*sigma*sigma));sum+=kern[i];}
+  for(var i=0;i<size;i++)kern[i]/=sum;
+  var tmp=new Float32Array(w*h);
+  var out=new Float32Array(w*h);
+  /* poziomo */
+  for(var y=0;y<h;y++){for(var x=0;x<w;x++){
+    var s=0;
+    for(var k=0;k<size;k++){var xi=Math.max(0,Math.min(w-1,x+k-r));s+=gray[y*w+xi]*kern[k];}
+    tmp[y*w+x]=s;
+  }}
+  /* pionowo */
+  for(var y=0;y<h;y++){for(var x=0;x<w;x++){
+    var s=0;
+    for(var k=0;k<size;k++){var yi=Math.max(0,Math.min(h-1,y+k-r));s+=tmp[yi*w+x]*kern[k];}
+    out[y*w+x]=s;
+  }}
+  return out;
+}
+
+/* Konwersja ImageData → Float32 skala szarości 0-1 */
+function toGray(data,n){
+  var g=new Float32Array(n);
+  for(var i=0;i<n;i++)g[i]=(0.299*data[i*4]+0.587*data[i*4+1]+0.114*data[i*4+2])/255;
+  return g;
+}
+
+/* XDoG — Extended Difference of Gaussians
+   Najlepsza metoda dla fotek: wyciąga artystyczne kontury */
+function xdog(gray, w, h, sigma, k, p, phi, eps){
+  var g1=gaussBlur(gray,w,h,sigma);
+  var g2=gaussBlur(gray,w,h,sigma*k);
+  var res=new Float32Array(w*h);
+  for(var i=0;i<w*h;i++){
+    var d=g1[i]-p*g2[i];
+    res[i]= d>=eps ? 1.0 : 1.0+Math.tanh(phi*(d-eps));
+  }
+  return res;
+}
+
+/* Próg — dla gotowych rysunków i szkiców */
+function threshold(gray, w, h, sigma, thresh){
+  var g=sigma>0.3?gaussBlur(gray,w,h,sigma):gray;
+  var res=new Float32Array(w*h);
+  var t=thresh/255;
+  for(var i=0;i<w*h;i++) res[i]= g[i]>t?1.0:0.0;
+  return res;
+}
+
+/* Zbuduj ImageData z wynikowej mapy (białe tło, czarne linie) */
+function buildResult(res, w, h){
+  var out=new ImageData(w,h);
+  for(var i=0;i<w*h;i++){
+    var v=Math.round(clamp(res[i],0,1)*255);
+    out.data[i*4]=v; out.data[i*4+1]=v; out.data[i*4+2]=v; out.data[i*4+3]=255;
+  }
+  return out;
+}
+
+/* Pobierz ImageData z obrazu przeskalowanego do maxW */
+function getScaledImageData(img, maxW){
+  var scale=Math.min(1, maxW/img.naturalWidth);
+  var w=Math.round(img.naturalWidth*scale);
+  var h=Math.round(img.naturalHeight*scale);
+  var tmp=document.createElement('canvas');
+  tmp.width=w; tmp.height=h;
+  tmp.getContext('2d').drawImage(img,0,0,w,h);
+  return {idata:tmp.getContext('2d').getImageData(0,0,w,h), w:w, h:h};
+}
+
+/* Główna funkcja procesowania */
+function processKalka(img, maxW){
+  var sigma=parseFloat(kBlurEl.value);
+  var sens=parseInt(kSensEl.value);
+  var thresh=parseInt(kThreshEl.value);
+  var d=getScaledImageData(img, maxW);
+  var gray=toGray(d.idata.data, d.w*d.h);
+  var res;
+  if(kalkaMode==='foto'){
+    /* XDoG: p blisko 1 = więcej krawędzi, phi = ostrość, eps = próg */
+    var p=1.0-(sens/100)*0.08;          /* 0.92 - 1.0 */
+    var phi=5+sens*0.6;                  /* 5 - 65 */
+    var eps=(thresh-50)/500;             /* -0.1 do +0.1 */
+    res=xdog(gray, d.w, d.h, sigma, 1.6, p, phi, eps);
+  }else{
+    /* Próg: prosty, dobry dla szkiców */
+    var t=255-Math.round(thresh*2.2);    /* wyższy próg = cieńsze linie */
+    res=threshold(gray, d.w, d.h, sigma*0.4, t);
+  }
+  return {idata:buildResult(res, d.w, d.h), w:d.w, h:d.h};
+}
+
+/* Odśwież podgląd w modalu */
+function refreshKalkaPreview(){
+  if(!S.img)return;
+  kalkaStatus.textContent='Przetwarzanie…';
+  clearTimeout(_kalkaTimer);
+  _kalkaTimer=setTimeout(function(){
+    try{
+      var r=processKalka(S.img, 600); /* podgląd max 600px */
+      kalkaCv.width=r.w; kalkaCv.height=r.h;
+      kCtx.putImageData(r.idata, 0, 0);
+      kalkaStatus.textContent='Gotowy podgląd · wyreguluj suwaki';
+    }catch(e){kalkaStatus.textContent='Błąd: '+e.message;}
+  },120);
+}
+
+/* Otwórz modal kalki */
+kalkaBtn.addEventListener('click',function(){
+  if(!S.img)return;
+  kalkaModal.classList.add('open');
+  refreshKalkaPreview();
+});
+document.getElementById('kalka-close').addEventListener('click',function(){
+  kalkaModal.classList.remove('open');
+});
+
+/* Tryb */
+kModeFoto.addEventListener('click',function(){
+  kalkaMode='foto';kModeFoto.classList.add('active');kModeRys.classList.remove('active');
+  /* domyślne wartości dla fotek */
+  kBlurEl.value=1.5;kBlurVal.textContent='1.5';
+  kSensEl.value=50;kSensVal.textContent='50';
+  kThreshEl.value=50;kThreshVal.textContent='50';
+  refreshKalkaPreview();
+});
+kModeRys.addEventListener('click',function(){
+  kalkaMode='rysunek';kModeRys.classList.add('active');kModeFoto.classList.remove('active');
+  /* domyślne wartości dla rysunków */
+  kBlurEl.value=0.5;kBlurVal.textContent='0.5';
+  kSensEl.value=70;kSensVal.textContent='70';
+  kThreshEl.value=60;kThreshVal.textContent='60';
+  refreshKalkaPreview();
+});
+
+/* Suwaki — podgląd w locie */
+kBlurEl.addEventListener('input',function(){kBlurVal.textContent=this.value;refreshKalkaPreview();});
+kSensEl.addEventListener('input',function(){kSensVal.textContent=this.value;refreshKalkaPreview();});
+kThreshEl.addEventListener('input',function(){kThreshVal.textContent=this.value;refreshKalkaPreview();});
+
+/* Zastosuj — przetwarza w pełnej rozdzielczości, zastępuje obraz */
+document.getElementById('kalka-apply').addEventListener('click',function(){
+  if(!S.img)return;
+  kalkaStatus.textContent='Przetwarzanie w pełnej rozdzielczości…';
+  setTimeout(function(){
+    try{
+      var r=processKalka(S.img, 99999); /* pełna rozdzielczość */
+      var tmp=document.createElement('canvas');
+      tmp.width=r.w; tmp.height=r.h;
+      tmp.getContext('2d').putImageData(r.idata,0,0);
+      var newImg=new Image();
+      newImg.onload=function(){
+        S.img=newImg;
+        kalkaModal.classList.remove('open');
+        draw();
+        showStatus('Kalka zastosowana ✓','ok');
+      };
+      newImg.src=tmp.toDataURL('image/png');
+    }catch(e){kalkaStatus.textContent='Błąd: '+e.message;}
+  },50);
+});
 
 /* ── init ── */
 highlightPreset();updateInfo();draw();
