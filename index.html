@@ -263,6 +263,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
     </div>
     <div class="kalka-btns">
       <button class="btn btn-gold" id="kalka-apply">✓ ZASTOSUJ</button>
+      <button class="btn btn-outline" id="kalka-save" style="border-color:#aaa;color:#aaa;">↓ ZAPISZ</button>
       <button class="btn btn-outline" id="kalka-close">✕ ANULUJ</button>
     </div>
     <div class="hint" style="text-align:center;margin-top:4px;">
@@ -926,7 +927,33 @@ document.getElementById('kalka-apply').addEventListener('click',function(){
   },50);
 });
 
-/* ── init ── */
+/* Zapisz kalkę jako plik */
+document.getElementById('kalka-save').addEventListener('click',function(){
+  if(!S.img)return;
+  kalkaStatus.textContent='Zapisuję…';
+  setTimeout(function(){
+    try{
+      var r=processKalka(S.img,99999);
+      var tmp=document.createElement('canvas');
+      tmp.width=r.w;tmp.height=r.h;
+      tmp.getContext('2d').putImageData(r.idata,0,0);
+      var dataUrl=tmp.toDataURL('image/png');
+      if(isIOS){
+        /* iOS: pokaż obraz do długiego przytrzymania */
+        var win=window.open('','_blank');
+        win.document.write('<html><body style="margin:0;background:#000">');
+        win.document.write('<p style="color:#e8c547;font-family:monospace;text-align:center;padding:12px;font-size:13px">Przytrzymaj obraz → Dodaj do zdjęć</p>');
+        win.document.write('<img src="'+dataUrl+'" style="max-width:100%;display:block;">');
+        win.document.write('</body></html>');
+        kalkaStatus.textContent='Otwarto w nowej karcie ✓';
+      }else{
+        var a=document.createElement('a');a.href=dataUrl;a.download='kalka.png';
+        document.body.appendChild(a);a.click();document.body.removeChild(a);
+        kalkaStatus.textContent='Pobrano kalka.png ✓';
+      }
+    }catch(e){kalkaStatus.textContent='Błąd: '+e.message;}
+  },50);
+});
 highlightPreset();updateInfo();draw();
 })();
 </script>
