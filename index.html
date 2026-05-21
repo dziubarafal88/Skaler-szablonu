@@ -920,10 +920,18 @@ function processKalka(img, maxW){
     res=przygotuj(gray, d.w, d.h, levels, sigma);
     /* Wynik normalny (nie inwertowany) — to nadal zdjęcie, nie kalka */
   }else if(kalkaMode==='krawedzie'){
-    /* Canny: czyste, cienkie krawędzie */
+    /* Canny: czyste krawędzie */
     var lowT=(1.0-sens/100)*0.25;
-    var highT=lowT*(1.5+thresh/50);
-    res=canny(gray, d.w, d.h, sigma, lowT, highT);
+    var highT=lowT*2.5;
+    var cannyRes=canny(gray, d.w, d.h, sigma, lowT, highT);
+    /* Anti-aliasing: rozmyj mapę krawędzi → gładkie linie zamiast schodków */
+    var smoothAmt=0.3+(thresh/100)*2.2; /* suwak Wygładzenie: 0.3–2.5 */
+    var edgesPos=new Float32Array(d.w*d.h);
+    for(var i=0;i<d.w*d.h;i++) edgesPos[i]=1.0-cannyRes[i]; /* krawędzie jako pozytyw */
+    var blEdges=gaussBlur(edgesPos, d.w, d.h, smoothAmt);
+    res=new Float32Array(d.w*d.h);
+    var boost=1.6+smoothAmt*0.4;
+    for(var i=0;i<d.w*d.h;i++) res[i]=1.0-Math.min(1.0, blEdges[i]*boost);
   }else{
     /* Rysunek: próg binarny */
     var t=255-Math.round(thresh*2.2);
@@ -979,14 +987,14 @@ function setModeUI(mode){
     kalkaStatus.textContent='Wyreguluj poziomy → Zastosuj → potem użyj Krawędzie';
   }else if(mode==='krawedzie'){
     kModeKraw.classList.add('active');
-    kLbl1.textContent='Rozmycie';
+    kLbl1.textContent='Rozmycie (redukcja szumów)';
     kLbl2.textContent='Czułość krawędzi';
-    kLbl3.textContent='Próg (grubość linii)';
+    kLbl3.textContent='Wygładzenie linii';
     kThreshRow.style.display='block';
     kSensEl.setAttribute('min','1');kSensEl.setAttribute('max','100');
     kBlurEl.value=1.2;kBlurVal.textContent='1.2';
     kSensEl.value=70;kSensVal.textContent='70';
-    kThreshEl.value=40;kThreshVal.textContent='40';
+    kThreshEl.value=45;kThreshVal.textContent='45';
   }else{
     kModeRys.classList.add('active');
     kLbl1.textContent='Rozmycie';
